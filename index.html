@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Soporte360</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <button id="brandLogo" class="brand-logo" type="button" title="Ver logo">S</button>
+        <div class="brand-copy">
+          <h1 id="brandName">Soporte360</h1>
+          <small>Gestión técnica y ventas</small>
+        </div>
+      </div>
+
+      <nav id="nav">
+        <button class="nav-item active" data-view="dashboard">🏠 Inicio</button>
+        <button class="nav-item" data-view="caja">💵 Caja</button>
+        <button class="nav-item" data-view="clientes">👥 Clientes</button>
+        <button class="nav-item" data-view="equipos">🛠️ Equipos</button>
+        <button class="nav-item" data-view="productos">📦 Productos</button>
+        <button class="nav-item" data-view="ventas">🧾 Ventas</button>
+        <button class="nav-item" data-view="facturas">📄 Facturas</button>
+        <button class="nav-item" data-view="configuracion">⚙️ Configuración</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div id="cashBadge" class="cash-badge closed">Caja cerrada</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2 id="pageTitle">Panel principal</h2>
+          <p id="pageSubtitle">Resumen general del negocio</p>
+        </div>
+        <div class="top-actions">
+          <span id="todayLabel"></span>
+          <button class="btn ghost" id="quickOpenCash">Abrir caja</button>
+        </div>
+      </header>
+
+      <section id="view-dashboard" class="view active">
+        <div class="stats-grid">
+          <article class="stat-card"><span>Ingresos de hoy</span><strong id="statSales">$0.00</strong><small>Ventas y reparaciones</small></article>
+          <article class="stat-card"><span>Clientes</span><strong id="statClients">0</strong><small>Registrados</small></article>
+          <article class="stat-card"><span>Equipos</span><strong id="statDevices">0</strong><small>En historial</small></article>
+          <article class="stat-card"><span>Stock bajo</span><strong id="statLowStock">0</strong><small>Productos por reponer</small></article>
+        </div>
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head"><h3>Estado de caja</h3></div>
+            <div id="dashboardCash"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Equipos recientes</h3></div>
+            <div id="recentDevices" class="list"></div>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-head"><h3>Últimos comprobantes</h3></div>
+          <div class="table-wrap"><table><thead><tr><th>Factura</th><th>Tipo</th><th>Cliente</th><th>Fecha</th><th>Total</th></tr></thead><tbody id="recentSales"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="view-caja" class="view">
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head"><h3>Apertura / cierre de caja</h3></div>
+            <div id="cashStatusPanel"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Movimiento manual</h3></div>
+            <form id="movementForm" class="form-grid">
+              <label>Tipo<select id="movementType"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></label>
+              <label>Monto<input id="movementAmount" type="number" min="0" step="0.01" required></label>
+              <label class="full">Concepto<input id="movementConcept" required placeholder="Ej. compra de insumos"></label>
+              <button class="btn primary full" type="submit">Registrar movimiento</button>
+            </form>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-head"><h3>Movimientos de caja</h3></div>
+          <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Monto</th></tr></thead><tbody id="cashMovements"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="view-clientes" class="view">
+        <div class="grid-2 align-start">
+          <article class="panel">
+            <div class="panel-head"><h3>Nuevo cliente</h3></div>
+            <form id="clientForm" class="form-grid">
+              <input type="hidden" id="clientId">
+              <label>Cédula / RUC<input id="clientCedula" required></label>
+              <label>Nombre completo<input id="clientName" required></label>
+              <label>Teléfono<input id="clientPhone" required></label>
+              <label>Dirección<input id="clientAddress" required></label>
+              <button class="btn primary full" type="submit">Guardar cliente</button>
+            </form>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Buscar cliente</h3></div>
+            <input class="search" id="clientSearch" placeholder="Buscar por cédula, nombre o teléfono">
+          </article>
+        </div>
+        <article class="panel"><div class="table-wrap"><table><thead><tr><th>Cédula/RUC</th><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th></th></tr></thead><tbody id="clientsTable"></tbody></table></div></article>
+      </section>
+
+      <section id="view-equipos" class="view">
+        <div class="grid-2 align-start">
+          <article class="panel">
+            <div class="panel-head"><h3>Registrar equipo</h3></div>
+            <form id="deviceForm" class="form-grid">
+              <input type="hidden" id="deviceId">
+              <label class="full">Cliente<select id="deviceClient" required></select></label>
+              <label>Tipo<select id="deviceType"><option>Computadora</option><option>Laptop</option><option>Impresora</option><option>PlayStation</option><option>Xbox</option><option>Nintendo Switch</option><option>Celular</option><option>Tablet</option><option>Monitor</option><option>Router</option><option>Otro</option></select></label>
+              <label>Marca<input id="deviceBrand" required></label>
+              <label>Modelo<input id="deviceModel" required></label>
+              <label>Serie<input id="deviceSerial"></label>
+              <label class="full">Daño reportado<textarea id="deviceDamage" required></textarea></label>
+              <label class="full">Observaciones<textarea id="deviceNotes"></textarea></label>
+              <label>Estado<select id="deviceStatus"><option>Recibido</option><option>En diagnóstico</option><option>Esperando aprobación</option><option>En reparación</option><option>Reparado</option><option>Entregado</option></select></label>
+              <button class="btn primary" type="submit">Guardar equipo</button>
+            </form>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Buscar equipo</h3></div>
+            <input class="search" id="deviceSearch" placeholder="Orden, cliente, marca, modelo, serie o daño">
+            <div class="info-note"><strong>Flujo de reparación:</strong> selecciona una orden o usa el botón <b>Reparar</b>. Allí agregas repuestos del inventario y la mano de obra.</div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head"><h3>Órdenes ingresadas</h3></div>
+          <div class="table-wrap"><table><thead><tr><th>Orden</th><th>Cliente</th><th>Equipo</th><th>Serie</th><th>Daño</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="devicesTable"></tbody></table></div>
+        </article>
+
+        <article class="panel repair-panel" id="repairPanel">
+          <div class="panel-head repair-head">
+            <div><h3>Punto de reparación</h3><p>Repuestos utilizados + mano de obra vinculados a una orden.</p></div>
+            <span class="status warn" id="repairStatusLabel">Seleccione una orden</span>
+          </div>
+
+          <div class="repair-order-picker">
+            <label>Orden de trabajo<select id="repairOrderSelect"></select></label>
+            <button type="button" class="btn ghost" id="loadRepairOrderBtn">Cargar orden</button>
+          </div>
+
+          <div id="repairOrderSummary" class="repair-summary empty">Seleccione una orden para comenzar.</div>
+
+          <div class="grid-2 align-start repair-workspace">
+            <div class="repair-column">
+              <h4>Repuestos / productos utilizados</h4>
+              <div class="form-grid compact-grid">
+                <label class="full">Producto<select id="repairProduct"></select></label>
+                <label>Cantidad<input id="repairQty" type="number" min="1" value="1"></label>
+                <button class="btn secondary repair-add-btn" id="addRepairProductBtn" type="button">+ Añadir repuesto</button>
+              </div>
+              <div class="product-preview" id="repairProductPreview">Selecciona un producto para ver precio y stock.</div>
+            </div>
+            <div class="repair-column">
+              <h4>Servicio / mano de obra</h4>
+              <div class="form-grid compact-grid">
+                <label class="full">Descripción<input id="repairServiceDesc" placeholder="Ej. Limpieza, cambio de SSD, instalación de sistema"></label>
+                <label>Valor<input id="repairServicePrice" type="number" min="0" step="0.01" placeholder="0.00"></label>
+                <button class="btn secondary repair-add-btn" id="addRepairServiceBtn" type="button">+ Añadir mano de obra</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="repair-checkout">
+            <div>
+              <h4>Detalle de reparación</h4>
+              <div id="repairCartList" class="cart repair-cart"></div>
+            </div>
+            <div class="repair-totals-card">
+              <div class="totals">
+                <div><span>Subtotal</span><strong id="repairSubtotal">$0.00</strong></div>
+                <div><span>IVA (%)</span><input id="repairTaxRate" type="number" min="0" step="0.01" value="0"></div>
+                <div class="grand"><span>Total</span><strong id="repairTotal">$0.00</strong></div>
+              </div>
+              <label>Forma de pago<select id="repairPaymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Mixto</option></select></label>
+              <button class="btn primary full-btn" id="finishRepairBtn" type="button">✓ Marcar reparado y generar factura</button>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section id="view-productos" class="view">
+        <div class="grid-2 align-start">
+          <article class="panel">
+            <div class="panel-head"><h3>Ingresar producto</h3></div>
+            <form id="productForm" class="form-grid">
+              <input type="hidden" id="productId">
+              <label>Código<input id="productCode" required></label>
+              <label>Producto<input id="productName" required></label>
+              <label>Categoría<input id="productCategory" placeholder="Repuestos, accesorios..."></label>
+              <label>Marca<input id="productBrand"></label>
+              <label>Precio compra<input id="productCost" type="number" min="0" step="0.01"></label>
+              <label>Precio venta<input id="productPrice" type="number" min="0" step="0.01" required></label>
+              <label>Stock<input id="productStock" type="number" min="0" step="1" required></label>
+              <label>Stock mínimo<input id="productMin" type="number" min="0" step="1" value="2"></label>
+              <button class="btn primary full" type="submit">Guardar producto</button>
+            </form>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Buscar producto</h3></div>
+            <input class="search" id="productSearch" placeholder="Código, nombre, categoría o marca">
+          </article>
+        </div>
+        <article class="panel"><div class="table-wrap"><table><thead><tr><th>Código</th><th>Producto</th><th>Compra</th><th>Venta</th><th>Stock</th><th>Estado</th><th></th></tr></thead><tbody id="productsTable"></tbody></table></div></article>
+      </section>
+
+      <section id="view-ventas" class="view">
+        <div class="grid-2 align-start sales-layout">
+          <article class="panel">
+            <div class="panel-head"><div><h3>Nueva venta de productos</h3><p>Este módulo es únicamente para productos vendidos en mostrador.</p></div></div>
+            <div class="form-grid">
+              <label class="full">Cliente<select id="saleClient"></select></label>
+              <label>Producto<select id="saleProduct"></select></label>
+              <label>Cantidad<input id="saleQty" type="number" min="1" value="1"></label>
+              <button class="btn secondary full" id="addProductBtn" type="button">+ Agregar producto</button>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Detalle de venta</h3></div>
+            <div id="cartList" class="cart"></div>
+            <div class="totals">
+              <div><span>Subtotal</span><strong id="saleSubtotal">$0.00</strong></div>
+              <div><span>IVA (%)</span><input id="taxRate" type="number" min="0" step="0.01" value="0"></div>
+              <div class="grand"><span>Total</span><strong id="saleTotal">$0.00</strong></div>
+            </div>
+            <label>Forma de pago<select id="paymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Mixto</option></select></label>
+            <button class="btn primary full-btn" id="finishSaleBtn">Finalizar venta e imprimir</button>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-facturas" class="view">
+        <article class="panel">
+          <div class="panel-head"><div><h3>Historial de facturas</h3><p>Ventas de productos y reparaciones finalizadas.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Número</th><th>Tipo</th><th>Orden</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Total</th><th></th></tr></thead><tbody id="invoicesTable"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="view-configuracion" class="view">
+        <div class="grid-2 align-start">
+          <article class="panel">
+            <div class="panel-head"><h3>Datos de la empresa</h3></div>
+            <form id="companyForm" class="form-grid">
+              <label>RUC<input id="companyRuc"></label>
+              <label>Nombre del local<input id="companyName" required></label>
+              <label>Razón social<input id="companyLegal"></label>
+              <label>Teléfono<input id="companyPhone"></label>
+              <label class="full">Dirección<input id="companyAddress"></label>
+              <label>Correo<input id="companyEmail" type="email"></label>
+              <label>Logo<input id="companyLogo" type="file" accept="image/*"></label>
+
+              <div class="full logo-config-card">
+                <div>
+                  <strong>Vista previa del logo</strong>
+                  <p>Haz clic sobre la imagen para verla en tamaño grande.</p>
+                </div>
+                <button id="companyLogoPreview" class="company-logo-preview" type="button" title="Ver logo en grande"><span>Sin logo</span></button>
+              </div>
+
+              <button class="btn primary full" type="submit">Guardar configuración</button>
+            </form>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Personalización</h3></div>
+            <div class="form-grid">
+              <label>Color principal<input id="primaryColor" type="color" value="#2563eb"></label>
+              <label>Color secundario<input id="secondaryColor" type="color" value="#0f172a"></label>
+              <button class="btn secondary full" id="applyColorsBtn">Aplicar colores</button>
+              <button class="btn danger full" id="resetDataBtn">Restablecer datos de prueba</button>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="logoModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-logo></div>
+    <div class="modal-card logo-modal-card">
+      <button class="modal-close" type="button" data-close-logo>×</button>
+      <img id="logoModalImage" alt="Logo de la empresa">
+      <div id="logoModalName" class="logo-modal-name"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
