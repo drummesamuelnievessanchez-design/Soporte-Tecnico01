@@ -40,8 +40,10 @@
           <p id="pageSubtitle">Resumen general del negocio</p>
         </div>
         <div class="top-actions">
+          <span id="cloudStatus" class="cloud-status offline">☁ Sin conexión</span>
           <span id="todayLabel"></span>
           <button class="btn ghost" id="quickOpenCash">Abrir caja</button>
+          <button class="btn ghost" id="logoutBtn" type="button" style="display:none">Cerrar sesión</button>
         </div>
       </header>
 
@@ -295,7 +297,35 @@
     </div>
   </div>
 
+  <div id="authOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="auth-icon">☁</div>
+        <div>
+          <h2>Soporte360 Cloud</h2>
+          <p>Inicia sesión para acceder a los datos de tu negocio desde cualquier dispositivo.</p>
+        </div>
+      </div>
+
+      <div id="cloudConfigWarning" class="cloud-warning" style="display:none">
+        <strong>Falta conectar Supabase</strong>
+        <p>Primero coloca la URL del proyecto y la clave pública en <code>supabase-config.js</code>.</p>
+      </div>
+
+      <form id="authForm" class="auth-form">
+        <label>Correo electrónico<input id="authEmail" type="email" autocomplete="email" required placeholder="correo@ejemplo.com"></label>
+        <label>Contraseña<input id="authPassword" type="password" autocomplete="current-password" required minlength="6" placeholder="Mínimo 6 caracteres"></label>
+        <button id="loginBtn" class="btn primary" type="submit">Iniciar sesión</button>
+        <button id="signupBtn" class="btn secondary" type="button">Crear cuenta</button>
+      </form>
+      <div id="authMessage" class="auth-message"></div>
+      <p class="auth-note">Los datos se sincronizan con la nube. En el primer inicio de sesión, si este navegador ya tenía información local, se copiará automáticamente a tu cuenta.</p>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -43,9 +43,175 @@ let repairCart = [];
 let activeRepairDeviceId = '';
 let logoDraftUrl = '';
 
+// ===== SINCRONIZACIÓN EN LA NUBE (SUPABASE) =====
+let cloudClient = null;
+let cloudUser = null;
+let cloudSyncChain = Promise.resolve();
+let cloudReady = false;
+
+function cloudConfigIsValid() {
+  const cfg = window.SUPABASE_CONFIG || {};
+  return Boolean(
+    cfg.url && cfg.anonKey &&
+    !String(cfg.url).includes('PEGA_AQUI') &&
+    !String(cfg.anonKey).includes('PEGA_AQUI')
+  );
+}
+
+function normalizeDb(raw = {}) {
+  return {
+    ...clone(defaults),
+    ...(raw || {}),
+    company: { ...clone(defaults.company), ...((raw || {}).company || {}) },
+    cash: {
+      ...clone(defaults.cash),
+      ...((raw || {}).cash || {}),
+      movements: Array.isArray((raw || {}).cash?.movements) ? (raw || {}).cash.movements : []
+    },
+    clients: Array.isArray((raw || {}).clients) ? (raw || {}).clients : [],
+    devices: Array.isArray((raw || {}).devices) ? (raw || {}).devices : [],
+    products: Array.isArray((raw || {}).products) ? (raw || {}).products : [],
+    sales: Array.isArray((raw || {}).sales) ? (raw || {}).sales : []
+  };
+}
+
+function setCloudStatus(type, text) {
+  const el = document.getElementById('cloudStatus');
+  if (!el) return;
+  el.className = 'cloud-status ' + type;
+  el.textContent = text;
+}
+
+function setAuthMessage(text = '', type = '') {
+  const el = document.getElementById('authMessage');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'auth-message' + (type ? ' ' + type : '');
+}
+
+function showAuthOverlay() {
+  document.getElementById('authOverlay')?.classList.remove('hidden');
+  const logout = document.getElementById('logoutBtn');
+  if (logout) logout.style.display = 'none';
+}
+
+function hideAuthOverlay() {
+  document.getElementById('authOverlay')?.classList.add('hidden');
+  const logout = document.getElementById('logoutBtn');
+  if (logout) logout.style.display = '';
+}
+
+async function pushCloudSnapshot(snapshot, userId) {
+  if (!cloudClient || !userId) return;
+  setCloudStatus('syncing', '☁ Guardando…');
+  const { error } = await cloudClient
+    .from('app_state')
+    .upsert({ user_id: userId, data: snapshot, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  if (error) {
+    console.error('Error guardando en Supabase:', error);
+    setCloudStatus('error', '☁ Error al guardar');
+    return;
+  }
+  if (cloudUser?.id === userId) setCloudStatus('online', '☁ Guardado');
+}
+
+function queueCloudSync() {
+  if (!cloudReady || !cloudUser || !cloudClient) return;
+  const snapshot = clone(db);
+  const userId = cloudUser.id;
+  cloudSyncChain = cloudSyncChain
+    .catch(() => {})
+    .then(() => pushCloudSnapshot(snapshot, userId));
+}
+
+async function loadCloudState(user) {
+  setCloudStatus('syncing', '☁ Cargando…');
+  const { data, error } = await cloudClient
+    .from('app_state')
+    .select('data')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (data?.data && typeof data.data === 'object' && Object.keys(data.data).length) {
+    db = normalizeDb(data.data);
+    localStorage.setItem(DB_KEY, JSON.stringify(db));
+  } else {
+    // Primera conexión: migra automáticamente lo que ya estaba guardado en este navegador.
+    await pushCloudSnapshot(clone(db), user.id);
+  }
+
+  cloudReady = true;
+  renderAll();
+  setCloudStatus('online', '☁ Guardado');
+}
+
+async function activateCloudUser(user) {
+  if (!user || (cloudUser?.id === user.id && cloudReady)) return;
+  cloudUser = user;
+  cloudReady = false;
+  hideAuthOverlay();
+  try {
+    await loadCloudState(user);
+    setAuthMessage('');
+  } catch (err) {
+    console.error(err);
+    cloudReady = false;
+    setCloudStatus('error', '☁ Error de nube');
+    showAuthOverlay();
+    setAuthMessage('No se pudo cargar la base de datos. Revisa que hayas ejecutado supabase.sql y que la configuración sea correcta.', 'error');
+  }
+}
+
+async function initCloud() {
+  showAuthOverlay();
+
+  if (!cloudConfigIsValid() || !window.supabase?.createClient) {
+    document.getElementById('cloudConfigWarning').style.display = 'block';
+    document.querySelectorAll('#authForm input, #authForm button').forEach(el => el.disabled = true);
+    setCloudStatus('error', '☁ Falta configurar');
+    setAuthMessage('Configura supabase-config.js y vuelve a subirlo a GitHub.', 'error');
+    return;
+  }
+
+  const cfg = window.SUPABASE_CONFIG;
+  cloudClient = window.supabase.createClient(cfg.url, cfg.anonKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+
+  try {
+    const { data, error } = await cloudClient.auth.getSession();
+    if (error) throw error;
+    if (data.session?.user) {
+      await activateCloudUser(data.session.user);
+    } else {
+      setCloudStatus('offline', '☁ Inicia sesión');
+    }
+  } catch (err) {
+    console.error(err);
+    setCloudStatus('error', '☁ Error de conexión');
+    setAuthMessage('No se pudo conectar con Supabase. Revisa URL, clave pública e internet.', 'error');
+  }
+
+  cloudClient.auth.onAuthStateChange((event, session) => {
+    setTimeout(async () => {
+      if (session?.user) {
+        await activateCloudUser(session.user);
+      } else {
+        cloudUser = null;
+        cloudReady = false;
+        showAuthOverlay();
+        setCloudStatus('offline', '☁ Inicia sesión');
+      }
+    }, 0);
+  });
+}
+
 function save(render = true) {
   localStorage.setItem(DB_KEY, JSON.stringify(db));
   if (render) renderAll();
+  queueCloudSync();
 }
 
 function toast(msg) {
@@ -970,3 +1136,47 @@ function renderAll() {
 }
 
 renderAll();
+
+// Inicio de sesión / registro
+document.getElementById('authForm').onsubmit = async e => {
+  e.preventDefault();
+  if (!cloudClient) return;
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  setAuthMessage('Iniciando sesión…');
+  const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
+  if (error) return setAuthMessage(error.message || 'No se pudo iniciar sesión.', 'error');
+  if (data.user) {
+    setAuthMessage('Sesión iniciada.', 'success');
+    await activateCloudUser(data.user);
+  }
+};
+
+document.getElementById('signupBtn').onclick = async () => {
+  if (!cloudClient) return;
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  if (!email || password.length < 6) return setAuthMessage('Escribe un correo válido y una contraseña de al menos 6 caracteres.', 'error');
+  setAuthMessage('Creando cuenta…');
+  const { data, error } = await cloudClient.auth.signUp({ email, password });
+  if (error) return setAuthMessage(error.message || 'No se pudo crear la cuenta.', 'error');
+  if (data.session?.user) {
+    setAuthMessage('Cuenta creada correctamente.', 'success');
+    await activateCloudUser(data.session.user);
+  } else {
+    setAuthMessage('Cuenta creada. Revisa tu correo para confirmar la cuenta y después inicia sesión.', 'success');
+  }
+};
+
+document.getElementById('logoutBtn').onclick = async () => {
+  if (!cloudClient) return;
+  await cloudSyncChain.catch(() => {});
+  const { error } = await cloudClient.auth.signOut();
+  if (error) return toast('No se pudo cerrar sesión');
+  cloudUser = null;
+  cloudReady = false;
+  showAuthOverlay();
+  setCloudStatus('offline', '☁ Inicia sesión');
+};
+
+initCloud();
