@@ -45,7 +45,7 @@ body.sidebar-collapsed .cash-badge:before{content:'💵';font-size:16px}
 
 /* ===== Mejoras v3: búsquedas e inventario de equipos ===== */
 .search-select-input{background:#fbfdff}.search-select-input::placeholder{color:#98a2b3}.hidden-field{display:none!important}.hidden-field.visible{display:flex!important}.optional-text{font-weight:500;color:var(--muted);font-size:11px}.repair-order-search-grid{grid-template-columns:minmax(220px,.85fr) minmax(280px,1.2fr) auto}
-@media(max-width:900px){.repair-order-search-grid{grid-template-columns:1fr}
+@media(max-width:900px){.repair-order-search-grid{grid-template-columns:1fr}}
 
 /* ===== Guía interactiva paso a paso con voz ===== */
 .guide-help-btn{position:fixed;right:24px;bottom:24px;z-index:430;display:flex;align-items:center;gap:9px;border:0;border-radius:999px;padding:12px 17px;background:linear-gradient(135deg,var(--primary),color-mix(in srgb,var(--primary) 62%,var(--secondary)));color:#fff;font-weight:900;cursor:pointer;box-shadow:0 14px 35px color-mix(in srgb,var(--primary) 28%,transparent);transition:.2s transform,.2s box-shadow}.guide-help-btn:hover{transform:translateY(-2px);box-shadow:0 17px 42px color-mix(in srgb,var(--primary) 36%,transparent)}.guide-help-icon{font-size:20px}.guide-help-label{font-size:13px;letter-spacing:.01em}
