@@ -1599,3 +1599,242 @@ document.getElementById('logoutBtn').onclick = async () => {
 };
 
 initCloud();
+
+
+// ===== GUÍA INTERACTIVA PASO A PASO CON VOZ =====
+const guideState = { view: 'dashboard', index: 0, speaking: false };
+
+const guideSteps = {
+  dashboard: [
+    { selector: '#sidebarToggle', icon: '↔️', title: 'Minimizar o ampliar el menú', text: 'Usa este botón para hacer el menú lateral más pequeño y ganar espacio en pantalla. Vuelve a pulsarlo para ampliarlo.' },
+    { selector: '#view-dashboard .stats-grid', icon: '📊', title: 'Resumen del negocio', text: 'Estas tarjetas muestran rápidamente ingresos del día, clientes, equipos pendientes, equipos reparados, total de equipos y productos con stock bajo.' },
+    { selector: '#dashboardCash', icon: '💵', title: 'Estado de caja', text: 'Aquí puedes confirmar si la caja está abierta o cerrada y revisar el valor actual antes de realizar cobros.' },
+    { selector: '#recentDevices', icon: '🛠️', title: 'Equipos recientes', text: 'Este bloque muestra los últimos equipos que ingresaron al taller y te ayuda a revisar rápidamente su estado.' },
+    { selector: '#recentSales', icon: '🧾', title: 'Últimos comprobantes', text: 'Aquí aparecen las ventas y reparaciones facturadas recientemente, con cliente, fecha y total.' }
+  ],
+  caja: [
+    { selector: '#cashStatusPanel', icon: '🔓', title: 'Abrir y cerrar caja', text: 'Antes de cobrar una venta o reparación debes abrir la caja. Ingresa el monto inicial y al terminar el día realiza el cierre para comparar los valores.' },
+    { selector: '#movementForm', icon: '↕️', title: 'Movimientos manuales', text: 'Registra aquí ingresos o egresos que no provengan directamente de una venta, por ejemplo compra de insumos, transporte o un ingreso adicional.' },
+    { selector: '#cashMovements', icon: '📋', title: 'Historial de movimientos', text: 'Esta tabla permite revisar todos los movimientos registrados en la caja actual, incluyendo ventas, reparaciones, ingresos y egresos.' }
+  ],
+  clientes: [
+    { selector: '#clientForm', icon: '👤', title: 'Registrar un cliente', text: 'Ingresa cédula o RUC, nombre, teléfono, correo y dirección. Estos datos se utilizarán al registrar equipos, ventas y facturas.' },
+    { selector: '#clientEmail', icon: '✉️', title: 'Correo del cliente', text: 'Registra un correo válido para poder preparar o enviar la factura al cliente desde el módulo de facturas.' },
+    { selector: '#clientSearch', icon: '🔎', title: 'Buscar clientes', text: 'Puedes buscar por cédula, nombre, teléfono o correo para encontrar rápidamente un registro existente.' },
+    { selector: '#clientsTable', icon: '📇', title: 'Listado de clientes', text: 'Aquí se muestran los clientes guardados y las acciones disponibles para administrar cada registro.' }
+  ],
+  equipos: [
+    { selector: '#deviceClientSearch', icon: '🔎', title: 'Buscar al propietario', text: 'Escribe el nombre o la cédula del cliente. El selector de abajo se filtrará para que puedas elegirlo sin recorrer toda la lista.' },
+    { selector: '#deviceType', icon: '📷', title: 'Tipo de equipo', text: 'Selecciona el tipo de máquina. Si eliges Otro aparecerá un campo donde puedes escribir Cámara, DVR, NVR, UPS u otro equipo, y ese nombre quedará guardado.' },
+    { selector: '#deviceForm', icon: '📝', title: 'Registrar el ingreso', text: 'Completa marca, modelo, serie, daño reportado, observaciones y estado. Al guardar se genera la orden de trabajo del equipo.' },
+    { selector: '#devicesTable', icon: '🗂️', title: 'Órdenes ingresadas', text: 'Aquí puedes revisar las máquinas recibidas, su estado y las acciones disponibles. El propietario también dispone de opciones administrativas como eliminar cuando corresponda.' },
+    { selector: '#repairOrderSearch', icon: '🔍', title: 'Buscar una reparación', text: 'Para reparar un equipo, busca por número de orden, nombre del cliente o cédula y luego carga la orden correspondiente.' },
+    { selector: '#repairProductSearch', icon: '📦', title: 'Añadir repuestos', text: 'Busca los productos usados en la reparación por código, nombre o marca. Al agregarlos, el stock se descuenta al finalizar la reparación.' },
+    { selector: '#addRepairServiceBtn', icon: '🧰', title: 'Añadir mano de obra', text: 'Escribe el trabajo realizado y su valor. La mano de obra queda vinculada a la reparación, no al módulo de ventas de mostrador.' },
+    { selector: '#finishRepairBtn', icon: '✅', title: 'Finalizar reparación', text: 'Cuando todo esté correcto, este botón marca el equipo como reparado, registra el cobro y genera la factura correspondiente.' }
+  ],
+  productos: [
+    { selector: '#productCode', icon: '🏷️', title: 'Código único', text: 'Cada producto debe tener un código diferente. El sistema valida que no exista otro producto con el mismo código antes de guardarlo.' },
+    { selector: '#productForm', icon: '📦', title: 'Registrar producto', text: 'Completa nombre, categoría, marca, precio de compra, precio de venta, stock y stock mínimo para incorporar un producto.' },
+    { selector: '#productPrice', icon: '💲', title: 'Precio con IVA incluido', text: 'El precio que ingreses ya es el precio final con IVA incluido. Si escribes 60 dólares, el cliente pagará 60 dólares; la factura separará internamente subtotal e IVA.' },
+    { selector: '#productSearch', icon: '🔎', title: 'Buscar o editar', text: 'Busca por código, nombre, categoría o marca para localizar un producto y editar sus datos.' },
+    { selector: '#productsTable', icon: '📋', title: 'Listado de productos', text: 'Esta tabla muestra precios, existencias, estado de stock y las acciones disponibles para cada producto.' }
+  ],
+  inventario: [
+    { selector: '#view-inventario .inventory-stats', icon: '📊', title: 'Resumen de inventario', text: 'Estas tarjetas muestran unidades disponibles, valor de compra, valor potencial de venta y cantidad de productos con stock bajo.' },
+    { selector: '#inventorySearch', icon: '🔎', title: 'Buscar en inventario', text: 'Busca rápidamente un artículo por código, nombre, marca o categoría.' },
+    { selector: '#inventoryFilter', icon: '🎚️', title: 'Filtrar existencias', text: 'Puedes mostrar todos los productos, solo los que tienen stock, los de stock bajo o los que están agotados.' },
+    { selector: '#inventoryTable', icon: '📦', title: 'Existencias actuales', text: 'Esta tabla es una vista de consulta del inventario. Muestra costos, precios con IVA incluido y cantidades disponibles.' }
+  ],
+  'inventario-equipos': [
+    { selector: '#view-inventario-equipos .inventory-stats', icon: '🗃️', title: 'Resumen de máquinas', text: 'Aquí puedes ver cuántos equipos han ingresado, cuántos siguen pendientes, cuántos están reparados y cuántos ya fueron entregados.' },
+    { selector: '#machineInventorySearch', icon: '🔎', title: 'Buscar una máquina', text: 'Busca por orden, cliente, cédula, tipo de equipo, marca, modelo o número de serie.' },
+    { selector: '#machineInventoryFilter', icon: '🎚️', title: 'Filtrar por estado', text: 'Muestra todos los equipos o únicamente pendientes, reparados o entregados.' },
+    { selector: '#machineInventoryTable', icon: '📑', title: 'Historial de equipos', text: 'Esta tabla concentra el historial de las máquinas ingresadas al taller con propietario, identificación, equipo, serie, fecha y estado.' }
+  ],
+  ventas: [
+    { selector: '#saleClientSearch', icon: '👤', title: 'Buscar cliente', text: 'Escribe nombre o cédula para filtrar el cliente que realizará la compra.' },
+    { selector: '#saleProductSearch', icon: '📦', title: 'Buscar producto', text: 'Busca el producto por código, nombre o marca y selecciónalo en la lista.' },
+    { selector: '#addProductBtn', icon: '➕', title: 'Agregar al detalle', text: 'Indica la cantidad y agrega el producto. El sistema verifica las existencias antes de completar la venta.' },
+    { selector: '#cartList', icon: '🛒', title: 'Detalle de la venta', text: 'Aquí aparecen los productos agregados. Revisa cantidades y precios antes de finalizar.' },
+    { selector: '#finishSaleBtn', icon: '🧾', title: 'Finalizar venta', text: 'Selecciona la forma de pago y finaliza. La venta se registra en caja, descuenta el stock y genera el comprobante.' }
+  ],
+  facturas: [
+    { selector: '#invoicesTable', icon: '📄', title: 'Historial de facturas', text: 'Aquí encontrarás las facturas de ventas y reparaciones. Desde las acciones puedes imprimir en A4 o ticket, preparar el correo y, como propietario, eliminar una factura incorrecta.' },
+    { selector: '#view-facturas .panel-head', icon: '⚠️', title: 'Eliminar con cuidado', text: 'La eliminación de una factura es administrativa. Si borras una factura incorrecta, el sistema intenta revertir los movimientos relacionados, por lo que debes usar esta opción únicamente cuando sea necesario.' }
+  ],
+  trabajadores: [
+    { selector: '#workerInviteForm', icon: '👷', title: 'Registrar trabajador', text: 'Ingresa nombre y correo del trabajador. El sistema generará una invitación para que acceda con permisos operativos limitados.' },
+    { selector: '#view-trabajadores .info-note', icon: '🔐', title: 'Permisos limitados', text: 'El trabajador puede usar Inicio, Caja, Clientes, Equipos y Ventas. No puede acceder a productos, inventarios, facturas, trabajadores ni configuración.' },
+    { selector: '#view-trabajadores .worker-help', icon: '🔑', title: 'Activar su acceso', text: 'El trabajador crea su cuenta con el mismo correo registrado y utiliza el código de invitación una sola vez al iniciar sesión.' },
+    { selector: '#workersTable', icon: '👥', title: 'Administrar trabajadores', text: 'Aquí el propietario puede revisar las invitaciones y trabajadores registrados, su estado y las acciones disponibles.' }
+  ],
+  configuracion: [
+    { selector: '#companyForm', icon: '🏢', title: 'Datos de la empresa', text: 'Configura RUC, nombre del local, razón social, teléfono, dirección, correo y logo. Estos datos se utilizan en los comprobantes.' },
+    { selector: '#companyTaxRate', icon: '％', title: 'IVA incluido', text: 'Define aquí el porcentaje de IVA. Los precios registrados ya incluyen ese IVA: un producto guardado a 60 dólares seguirá costando 60 dólares al cliente.' },
+    { selector: '#companyLogoPreview', icon: '🖼️', title: 'Logo de la empresa', text: 'Carga y revisa aquí el logo que aparecerá en el sistema y en los comprobantes.' },
+    { selector: '#primaryColor', icon: '🎨', title: 'Colores del sistema', text: 'Elige los colores principales de la aplicación y pulsa Aplicar colores para personalizar la identidad visual del negocio.' },
+    { selector: '#view-configuracion .email-config-box', icon: '✉️', title: 'Correo de facturas', text: 'EmailJS es opcional. Si lo configuras, permite automatizar el envío; si no, el botón Correo prepara el mensaje en la aplicación de correo del dispositivo.' },
+    { selector: '#resetDataBtn', icon: '⚠️', title: 'Restablecer datos', text: 'Esta opción es delicada. Úsala únicamente si realmente necesitas restablecer la información de la aplicación.' }
+  ]
+};
+
+function getCurrentGuideView() {
+  return document.querySelector('.nav-item.active')?.dataset.view || 'dashboard';
+}
+
+function guideAvailableViews() {
+  const ownerOnly = new Set(['productos','inventario','inventario-equipos','facturas','trabajadores','configuracion']);
+  return Object.keys(guideSteps).filter(v => isOwner() || !ownerOnly.has(v));
+}
+
+function populateGuideModules(selected) {
+  const sel = document.getElementById('guideModuleSelect');
+  if (!sel) return;
+  const views = guideAvailableViews();
+  sel.innerHTML = views.map(v => `<option value="${esc(v)}">${esc(viewMeta[v]?.[0] || v)}</option>`).join('');
+  sel.value = views.includes(selected) ? selected : views[0];
+}
+
+function clearGuideHighlight() {
+  document.querySelectorAll('.guide-highlight').forEach(el => el.classList.remove('guide-highlight'));
+}
+
+function stopGuideVoice() {
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  guideState.speaking = false;
+  const status = document.getElementById('guideVoiceStatus');
+  if (status) status.textContent = 'Voz lista';
+}
+
+function guideSpeak(text) {
+  stopGuideVoice();
+  if (!('speechSynthesis' in window)) {
+    const status = document.getElementById('guideVoiceStatus');
+    if (status) status.textContent = 'Voz no disponible';
+    return;
+  }
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'es-EC';
+  utter.rate = 0.96;
+  utter.pitch = 1;
+  const voices = window.speechSynthesis.getVoices();
+  const voice = voices.find(v => /^es-EC/i.test(v.lang)) || voices.find(v => /^es-/i.test(v.lang));
+  if (voice) utter.voice = voice;
+  utter.onstart = () => {
+    guideState.speaking = true;
+    const status = document.getElementById('guideVoiceStatus');
+    if (status) status.textContent = '🔊 Hablando';
+  };
+  utter.onend = utter.onerror = () => {
+    guideState.speaking = false;
+    const status = document.getElementById('guideVoiceStatus');
+    if (status) status.textContent = 'Voz lista';
+  };
+  window.speechSynthesis.speak(utter);
+}
+
+function renderGuideStep({ speak = true } = {}) {
+  const steps = guideSteps[guideState.view] || [];
+  if (!steps.length) return;
+  guideState.index = Math.max(0, Math.min(guideState.index, steps.length - 1));
+  const step = steps[guideState.index];
+  clearGuideHighlight();
+
+  const title = document.getElementById('guideTitle');
+  const count = document.getElementById('guideStepCount');
+  const bar = document.getElementById('guideProgressBar');
+  const stepTitle = document.getElementById('guideStepTitle');
+  const stepText = document.getElementById('guideStepText');
+  const icon = document.getElementById('guideStepIcon');
+  const prev = document.getElementById('guidePrevBtn');
+  const next = document.getElementById('guideNextBtn');
+  if (title) title.textContent = `Guía · ${viewMeta[guideState.view]?.[0] || 'Apartado'}`;
+  if (count) count.textContent = `Paso ${guideState.index + 1} de ${steps.length}`;
+  if (bar) bar.style.width = `${((guideState.index + 1) / steps.length) * 100}%`;
+  if (stepTitle) stepTitle.textContent = step.title;
+  if (stepText) stepText.textContent = step.text;
+  if (icon) icon.textContent = step.icon || '💡';
+  if (prev) prev.disabled = guideState.index === 0;
+  if (next) next.textContent = guideState.index === steps.length - 1 ? 'Finalizar ✓' : 'Siguiente →';
+
+  const target = document.querySelector(step.selector);
+  if (target) {
+    target.classList.add('guide-highlight');
+    setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }), 70);
+  }
+  if (speak && document.getElementById('guideAutoVoice')?.checked) {
+    guideSpeak(`${step.title}. ${step.text}`);
+  }
+}
+
+function startGuide(view = getCurrentGuideView()) {
+  if (!guideSteps[view]) view = 'dashboard';
+  if (!guideAvailableViews().includes(view)) view = 'dashboard';
+  guideState.view = view;
+  guideState.index = 0;
+  populateGuideModules(view);
+  if (getCurrentGuideView() !== view) showView(view);
+  document.getElementById('guidePanel')?.classList.add('open');
+  document.getElementById('guidePanel')?.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('guide-active');
+  renderGuideStep({ speak: true });
+}
+
+function closeGuide() {
+  stopGuideVoice();
+  clearGuideHighlight();
+  document.getElementById('guidePanel')?.classList.remove('open');
+  document.getElementById('guidePanel')?.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('guide-active');
+}
+
+function guideNext() {
+  const steps = guideSteps[guideState.view] || [];
+  if (guideState.index >= steps.length - 1) {
+    guideSpeak('Guía finalizada. Ya puedes utilizar este apartado.');
+    setTimeout(closeGuide, 900);
+    return;
+  }
+  guideState.index += 1;
+  renderGuideStep({ speak: true });
+}
+
+function guidePrev() {
+  if (guideState.index <= 0) return;
+  guideState.index -= 1;
+  renderGuideStep({ speak: true });
+}
+
+const guideHelpBtn = document.getElementById('guideHelpBtn');
+if (guideHelpBtn) guideHelpBtn.onclick = () => startGuide(getCurrentGuideView());
+document.getElementById('guideCloseBtn')?.addEventListener('click', closeGuide);
+document.getElementById('guideNextBtn')?.addEventListener('click', guideNext);
+document.getElementById('guidePrevBtn')?.addEventListener('click', guidePrev);
+document.getElementById('guideSpeakBtn')?.addEventListener('click', () => {
+  const step = (guideSteps[guideState.view] || [])[guideState.index];
+  if (step) guideSpeak(`${step.title}. ${step.text}`);
+});
+document.getElementById('guideModuleSelect')?.addEventListener('change', e => {
+  const view = e.target.value;
+  if (!guideSteps[view]) return;
+  stopGuideVoice();
+  clearGuideHighlight();
+  showView(view);
+  guideState.view = view;
+  guideState.index = 0;
+  renderGuideStep({ speak: true });
+});
+document.getElementById('guideAutoVoice')?.addEventListener('change', e => {
+  if (!e.target.checked) stopGuideVoice();
+  else {
+    const step = (guideSteps[guideState.view] || [])[guideState.index];
+    if (step) guideSpeak(`${step.title}. ${step.text}`);
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('guidePanel')?.classList.contains('open')) closeGuide();
+  if (!document.getElementById('guidePanel')?.classList.contains('open')) return;
+  if (e.key === 'ArrowRight') guideNext();
+  if (e.key === 'ArrowLeft') guidePrev();
+});

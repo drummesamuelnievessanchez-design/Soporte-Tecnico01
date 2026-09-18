@@ -381,6 +381,45 @@
     </div>
   </div>
 
+  <!-- Guía interactiva paso a paso con voz -->
+  <button id="guideHelpBtn" class="guide-help-btn" type="button" title="Abrir guía paso a paso" aria-label="Abrir guía paso a paso">
+    <span class="guide-help-icon">🧭</span><span class="guide-help-label">Guía</span>
+  </button>
+
+  <div id="guidePanel" class="guide-panel" aria-hidden="true">
+    <div class="guide-panel-head">
+      <div>
+        <span class="guide-kicker">AYUDA INTERACTIVA</span>
+        <h3 id="guideTitle">Guía paso a paso</h3>
+      </div>
+      <button id="guideCloseBtn" class="guide-close" type="button" aria-label="Cerrar guía">×</button>
+    </div>
+    <div class="guide-module-row">
+      <label>Apartado
+        <select id="guideModuleSelect"></select>
+      </label>
+      <label class="guide-voice-switch">
+        <input id="guideAutoVoice" type="checkbox" checked>
+        <span>🔊 Voz automática</span>
+      </label>
+    </div>
+    <div class="guide-progress-track"><span id="guideProgressBar"></span></div>
+    <div class="guide-step-meta"><span id="guideStepCount">Paso 1 de 1</span><span id="guideVoiceStatus">Voz lista</span></div>
+    <div class="guide-step-card">
+      <div id="guideStepIcon" class="guide-step-icon">💡</div>
+      <div>
+        <h4 id="guideStepTitle">Bienvenido</h4>
+        <p id="guideStepText">Selecciona un apartado para comenzar.</p>
+      </div>
+    </div>
+    <div class="guide-actions">
+      <button id="guidePrevBtn" class="guide-btn" type="button">← Anterior</button>
+      <button id="guideSpeakBtn" class="guide-btn voice" type="button">🔊 Repetir</button>
+      <button id="guideNextBtn" class="guide-btn primary" type="button">Siguiente →</button>
+    </div>
+    <div class="guide-tip">La guía señalará en pantalla el botón o campo que debes utilizar. Puedes cambiar de apartado desde el selector.</div>
+  </div>
+
   <div id="authOverlay" class="auth-overlay">
     <div class="auth-card">
       <div class="auth-brand">
