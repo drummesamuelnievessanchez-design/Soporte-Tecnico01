@@ -53,8 +53,10 @@
       <section id="view-dashboard" class="view active">
         <div class="stats-grid">
           <article class="stat-card"><span>Ingresos de hoy</span><strong id="statSales">$0.00</strong><small>Ventas y reparaciones</small></article>
+          <article class="stat-card"><span>Comprobantes hoy</span><strong id="statTodayDocs">0</strong><small>Ventas + reparaciones</small></article>
           <article class="stat-card"><span>Clientes</span><strong id="statClients">0</strong><small>Registrados</small></article>
-          <article class="stat-card"><span>Equipos pendientes</span><strong id="statPendingDevices">0</strong><small>Por reparar / entregar</small></article>
+          <article class="stat-card"><span>Equipos pendientes</span><strong id="statPendingDevices">0</strong><small>En proceso</small></article>
+          <article class="stat-card"><span>Por entregar</span><strong id="statReadyDelivery">0</strong><small>Reparados pendientes de entrega</small></article>
           <article class="stat-card"><span>Equipos reparados</span><strong id="statRepairedDevices">0</strong><small>Reparados o entregados</small></article>
           <article class="stat-card"><span>Total equipos</span><strong id="statDevices">0</strong><small>En historial</small></article>
           <article class="stat-card"><span>Stock bajo</span><strong id="statLowStock">0</strong><small>Productos por reponer</small></article>
@@ -69,6 +71,10 @@
             <div id="recentDevices" class="list"></div>
           </article>
         </div>
+        <article class="panel">
+          <div class="panel-head"><div><h3>Atención requerida</h3><p>Equipos y productos que conviene revisar.</p></div></div>
+          <div id="dashboardAlerts" class="dashboard-alerts"></div>
+        </article>
         <article class="panel">
           <div class="panel-head"><h3>Últimos comprobantes</h3></div>
           <div class="table-wrap"><table><thead><tr><th>Factura</th><th>Tipo</th><th>Cliente</th><th>Fecha</th><th>Total</th></tr></thead><tbody id="recentSales"></tbody></table></div>
@@ -127,7 +133,7 @@
               <input type="hidden" id="deviceId">
               <label class="full client-autocomplete-label">Cliente
                 <div class="client-autocomplete">
-                  <input id="deviceClientSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Escriba nombre o cédula..." aria-autocomplete="list" aria-controls="deviceClientSuggestions">
+                  <input id="deviceClientSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Buscar cliente por cédula o nombre…" aria-autocomplete="list" aria-controls="deviceClientSuggestions" aria-expanded="false">
                   <input type="hidden" id="deviceClient">
                   <div id="deviceClientSuggestions" class="client-suggestions" role="listbox"></div>
                 </div>
@@ -140,7 +146,11 @@
               <label class="full">Daño reportado<textarea id="deviceDamage" required></textarea></label>
               <label class="full">Observaciones<textarea id="deviceNotes"></textarea></label>
               <label>Estado<select id="deviceStatus"><option>Recibido</option><option>En diagnóstico</option><option>Esperando aprobación</option><option>En reparación</option><option>Reparado</option><option>Entregado</option></select></label>
+              <label>Garantía de reparación (días)<input id="deviceWarrantyDays" type="number" min="0" step="1" value="0" placeholder="Ej. 30"></label>
+              <label class="full">Vigencia de garantía<input id="deviceWarrantyPeriod" readonly placeholder="Se activa al finalizar la reparación"></label>
+              <label class="full">Condiciones / observaciones de garantía<textarea id="deviceWarrantyNotes" placeholder="Ej. Cubre únicamente la reparación realizada y no daños por golpes, líquidos o manipulación externa."></textarea></label>
               <button class="btn primary" type="submit">Guardar equipo</button>
+              <button class="btn secondary" id="savePrintDeviceBtn" type="submit">Guardar e imprimir orden</button>
             </form>
           </article>
           <article class="panel">
@@ -276,7 +286,7 @@
             <div class="form-grid">
               <label class="full client-autocomplete-label">Cliente
                 <div class="client-autocomplete">
-                  <input id="saleClientSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Escriba nombre o cédula..." aria-autocomplete="list" aria-controls="saleClientSuggestions">
+                  <input id="saleClientSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Buscar cliente por cédula o nombre…" aria-autocomplete="list" aria-controls="saleClientSuggestions" aria-expanded="false">
                   <input type="hidden" id="saleClient">
                   <div id="saleClientSuggestions" class="client-suggestions" role="listbox"></div>
                 </div>
@@ -321,6 +331,8 @@
               <label>Correo de la empresa<input id="companyEmail" type="email"></label>
               <label>IVA (%) <input id="companyTaxRate" type="number" min="0" max="100" step="0.01" value="15"></label>
               <label>Logo<input id="companyLogo" type="file" accept="image/*"></label>
+              <label class="full">Cláusulas / condiciones de servicio<textarea id="companyServiceClause" rows="5" placeholder="Escriba aquí las condiciones de recepción, reparación, garantía, retiro de equipos u otras políticas de la empresa."></textarea></label>
+              <div class="full info-note"><strong>Cláusulas:</strong> el texto que registres aquí aparecerá en la orden de servicio y en los comprobantes de reparación. Déjalo vacío si no deseas imprimir condiciones.</div>
               <div class="full info-note"><strong>Precios con IVA incluido:</strong> si ingresas un precio de $60, el total seguirá siendo $60. El sistema separará internamente el subtotal y el IVA para la factura.</div>
 
               <div class="full logo-config-card">
@@ -347,6 +359,14 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="clientHistoryModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-client-history></div>
+    <div class="modal-card client-history-modal-card">
+      <button class="modal-close" type="button" data-close-client-history>×</button>
+      <div id="clientHistoryContent"></div>
+    </div>
   </div>
 
   <div id="logoModal" class="modal" aria-hidden="true">

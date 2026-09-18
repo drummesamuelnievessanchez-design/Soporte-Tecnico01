@@ -31,7 +31,7 @@ body.sidebar-collapsed .nav-icon{font-size:19px}
 body.sidebar-collapsed .cash-badge{font-size:0;padding:10px 6px}
 body.sidebar-collapsed .cash-badge:before{content:'💵';font-size:16px}
 
-.stats-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
+.stats-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 .device-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.mini-stat{background:var(--panel);border:1px solid var(--border);border-radius:15px;padding:16px;box-shadow:var(--shadow)}.mini-stat span{display:block;color:var(--muted);font-size:12px;font-weight:700}.mini-stat strong{display:block;font-size:25px;margin-top:6px}.mini-stat.pending{border-top:3px solid #f59e0b}.mini-stat.repaired{border-top:3px solid #22c55e}.mini-stat.delivered{border-top:3px solid #3b82f6}.device-list-head{gap:16px}.inline-filter{min-width:180px}.inline-filter select{padding:8px 10px}
 
 .inventory-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}.inventory-head{gap:16px;align-items:flex-end}.inventory-filters{display:grid;grid-template-columns:minmax(260px,1fr) 170px;gap:10px;min-width:min(560px,55vw)}.inventory-filters .search{margin:0}
@@ -56,3 +56,24 @@ body.sidebar-collapsed .cash-badge:before{content:'💵';font-size:16px}
 @keyframes guidePulse{from{outline-color:color-mix(in srgb,var(--primary) 68%,#fff)}to{outline-color:#22c55e}}
 body.guide-active .guide-help-btn{opacity:.72}
 @media(max-width:760px){.guide-help-btn{right:14px;bottom:14px;padding:11px 14px}.guide-panel{right:12px;bottom:70px;width:calc(100vw - 24px);max-height:72vh;padding:15px}.guide-module-row{grid-template-columns:1fr}.guide-voice-switch{justify-content:center}.guide-actions{grid-template-columns:1fr 1fr}.guide-btn.primary{grid-column:1/-1}.guide-highlight::after{top:-22px;font-size:8px}}
+
+
+/* ===== Mejoras V9: historial, dashboard, garantía, cláusulas y orden imprimible ===== */
+.dashboard-alerts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dashboard-alert-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:#fbfdff}.dashboard-alert-item strong{display:block;font-size:13px}.dashboard-alert-item span{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
+.client-history-modal-card{width:min(1080px,calc(100vw - 34px));max-height:88vh;overflow:auto;padding:28px}.history-head{padding-right:45px}.history-kicker{display:block;color:var(--primary);font-size:10px;font-weight:900;letter-spacing:.12em}.history-head h2{margin:5px 0 3px;font-size:24px}.history-head p{margin:0;color:var(--muted);font-size:13px}.history-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}.history-stat{padding:15px;border:1px solid var(--border);border-radius:13px;background:#f8fafc}.history-stat span{display:block;color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase}.history-stat strong{display:block;margin-top:6px;font-size:21px}.history-section{margin-top:22px}.history-section h3{margin:0 0 10px;font-size:15px}.doc-terms{border:1px solid #dfe5ec;border-radius:8px;padding:8px;background:#fafbfc}.invoice-terms{margin-top:6px;padding:6px 8px;border:1px solid #e3e8ef;border-radius:6px;background:#fafbfc;font-size:7.5px;line-height:1.35}.repair-strip{grid-template-columns:repeat(5,1fr)!important}
+@media(max-width:900px){.dashboard-alerts{grid-template-columns:1fr}.history-summary-grid{grid-template-columns:1fr}.client-history-modal-card{padding:20px}.repair-strip{grid-template-columns:1fr 1fr!important}}
+@media(max-width:520px){.repair-strip{grid-template-columns:1fr!important}}
+
+/* V10 — Buscador único de clientes con autocompletado */
+.client-suggestion.active,
+.client-suggestion:hover,
+.client-suggestion:focus{
+  background:#f0f6ff;
+  outline:none;
+}
+.client-suggestion strong{
+  line-height:1.35;
+}
+.client-suggestion span{
+  margin-top:1px;
+}

@@ -11,7 +11,7 @@ const clone = obj => JSON.parse(JSON.stringify(obj));
 const esc = (s = '') => String(s).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
 
 const defaults = {
-  company: { ruc: '', name: 'Soporte360', legal: '', phone: '', address: '', email: '', logo: '', primary: '#2563eb', secondary: '#0f172a', taxRate: 15 },
+  company: { ruc: '', name: 'Soporte360', legal: '', phone: '', address: '', email: '', logo: '', primary: '#2563eb', secondary: '#0f172a', taxRate: 15, serviceClause: '' },
   cash: { open: false, opening: 0, openedAt: null, closedAt: null, lastClosedTotal: 0, movements: [] },
   clients: [],
   devices: [],
@@ -313,18 +313,37 @@ function deviceIsRepaired(d) {
   return d.status === 'Reparado' || d.status === 'Entregado';
 }
 
+function addDaysToDateKey(dateKey, days) {
+  const [y, m, day] = String(dateKey || '').split('-').map(Number);
+  if (!y || !m || !day) return '';
+  const d = new Date(y, m - 1, day);
+  d.setDate(d.getDate() + Math.max(0, Number(days || 0)));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function warrantyLabel(d) {
+  const days = Math.max(0, Number(d?.warrantyDays || 0));
+  if (!days) return 'Sin garantía registrada';
+  if (d?.warrantyStart && d?.warrantyUntil) return `${days} días · ${d.warrantyStart} al ${d.warrantyUntil}`;
+  return `${days} días · inicia al finalizar la reparación`;
+}
+
 function getClientEmail(clientId, fallback = '') {
   return db.clients.find(c => c.id === clientId)?.email || fallback || '';
 }
 
 function renderDashboard() {
   const todaySales = db.sales.filter(isSaleToday);
+  const readyDelivery = db.devices.filter(d => d.status === 'Reparado');
+  const lowStock = db.products.filter(p => Number(p.stock) <= Number(p.min));
   document.getElementById('statSales').textContent = money(todaySales.reduce((a, s) => a + Number(s.total || 0), 0));
+  document.getElementById('statTodayDocs').textContent = todaySales.length;
   document.getElementById('statClients').textContent = db.clients.length;
   document.getElementById('statDevices').textContent = db.devices.length;
   document.getElementById('statPendingDevices').textContent = db.devices.filter(d => !deviceIsRepaired(d)).length;
+  document.getElementById('statReadyDelivery').textContent = readyDelivery.length;
   document.getElementById('statRepairedDevices').textContent = db.devices.filter(deviceIsRepaired).length;
-  document.getElementById('statLowStock').textContent = db.products.filter(p => Number(p.stock) <= Number(p.min)).length;
+  document.getElementById('statLowStock').textContent = lowStock.length;
 
   document.getElementById('dashboardCash').innerHTML = db.cash.open
     ? `<div class="cash-box"><span class="status good">ABIERTA</span><strong>${money(cashBalance())}</strong><div class="muted">Apertura: ${money(db.cash.opening)} · ${esc(db.cash.openedAt || '')}</div></div>`
@@ -334,6 +353,16 @@ function renderDashboard() {
     const c = db.clients.find(x => x.id === d.clientId);
     return `<div class="list-item"><div><strong>${esc(d.order)} · ${esc(d.brand)} ${esc(d.model)}</strong><div class="muted">${esc(c?.name || 'Cliente')}</div></div><span class="status">${esc(d.status)}</span></div>`;
   }).join('') || '<div class="empty">No hay equipos registrados.</div>';
+
+  const attentionDevices = db.devices.filter(d => d.status === 'Esperando aprobación' || d.status === 'Reparado').slice().reverse().slice(0, 5);
+  const alerts = [
+    ...attentionDevices.map(d => {
+      const c = db.clients.find(x => x.id === d.clientId);
+      return `<div class="dashboard-alert-item"><div><strong>${esc(d.order)} · ${esc(deviceTypeLabel(d))}</strong><span>${esc(c?.name || 'Cliente')} · ${esc(d.status)}</span></div><button class="mini" onclick="showView('equipos');editDevice('${d.id}')">Ver</button></div>`;
+    }),
+    ...lowStock.slice(0, 5).map(p => `<div class="dashboard-alert-item"><div><strong>${esc(p.code)} · ${esc(p.name)}</strong><span>Stock ${Number(p.stock || 0)} · mínimo ${Number(p.min || 0)}</span></div><button class="mini" onclick="showView('productos');editProduct('${p.id}')">Ver</button></div>`)
+  ];
+  document.getElementById('dashboardAlerts').innerHTML = alerts.join('') || '<div class="empty">No hay alertas pendientes.</div>';
 
   document.getElementById('recentSales').innerHTML = db.sales.slice(-5).reverse().map(s => `
     <tr><td>${esc(s.number)}</td><td><span class="status ${s.source === 'repair' ? 'warn' : 'good'}">${saleTypeLabel(s)}</span></td><td>${esc(s.clientName)}</td><td>${esc(s.date)}</td><td><strong>${money(s.total)}</strong></td></tr>
@@ -399,15 +428,33 @@ function normalizeSearchText(value = '') {
 }
 
 function clientDisplayText(client) {
-  return client ? `${client.cedula || ''} · ${client.name || ''}`.trim() : '';
+  if (!client) return '';
+  const cedula = client.cedula || '';
+  const name = client.name || '';
+  const phone = client.phone || '';
+  return [cedula, name, phone].filter(Boolean).join(' — ');
 }
 
 function closeClientSuggestions(suggestionsId) {
   const box = document.getElementById(suggestionsId);
-  if (box) {
-    box.innerHTML = '';
-    box.classList.remove('open');
-  }
+  if (!box) return;
+  box.innerHTML = '';
+  box.classList.remove('open');
+  const input = box.closest('.client-autocomplete')?.querySelector('.search-select-input');
+  if (input) input.setAttribute('aria-expanded', 'false');
+}
+
+function setActiveClientSuggestion(box, index) {
+  const items = [...box.querySelectorAll('.client-suggestion')];
+  if (!items.length) return -1;
+  const next = Math.max(0, Math.min(index, items.length - 1));
+  items.forEach((item, i) => {
+    item.classList.toggle('active', i === next);
+    item.setAttribute('aria-selected', i === next ? 'true' : 'false');
+  });
+  items[next].scrollIntoView({ block: 'nearest' });
+  box.dataset.activeIndex = String(next);
+  return next;
 }
 
 function renderClientSuggestions(searchId, hiddenId, suggestionsId) {
@@ -423,6 +470,8 @@ function renderClientSuggestions(searchId, hiddenId, suggestionsId) {
     return;
   }
 
+  // Si el usuario vuelve a escribir después de seleccionar, se invalida la selección
+  // hasta que elija nuevamente una coincidencia.
   hidden.value = '';
   if (!q) {
     closeClientSuggestions(suggestionsId);
@@ -431,21 +480,24 @@ function renderClientSuggestions(searchId, hiddenId, suggestionsId) {
 
   const matches = db.clients
     .filter(c => normalizeSearchText(`${c.cedula || ''} ${c.name || ''}`).includes(q))
-    .slice(0, 8);
+    .slice(0, 10);
 
+  box.dataset.activeIndex = '-1';
   if (!matches.length) {
-    box.innerHTML = '<div class="client-suggestion-empty">No se encontraron clientes.</div>';
+    box.innerHTML = '<div class="client-suggestion-empty">No se encontraron clientes por cédula o nombre.</div>';
     box.classList.add('open');
+    input.setAttribute('aria-expanded', 'true');
     return;
   }
 
   box.innerHTML = matches.map(c => `
-    <button type="button" class="client-suggestion" role="option" data-client-id="${esc(c.id)}">
-      <strong>${esc(c.name || '')}</strong>
-      <span>${esc(c.cedula || '')}</span>
+    <button type="button" class="client-suggestion" role="option" aria-selected="false" data-client-id="${esc(c.id)}">
+      <strong>${esc(c.cedula || 'Sin cédula')} — ${esc(c.name || 'Sin nombre')}</strong>
+      <span>${esc(c.phone || 'Sin teléfono')}</span>
     </button>
   `).join('');
   box.classList.add('open');
+  input.setAttribute('aria-expanded', 'true');
 }
 
 function selectClientFromSearch(searchId, hiddenId, suggestionsId, clientId) {
@@ -458,13 +510,45 @@ function selectClientFromSearch(searchId, hiddenId, suggestionsId, clientId) {
 
 function setupClientAutocomplete(searchId, hiddenId, suggestionsId) {
   const input = document.getElementById(searchId);
+  const hidden = document.getElementById(hiddenId);
   const box = document.getElementById(suggestionsId);
-  if (!input || !box) return;
+  if (!input || !hidden || !box) return;
 
   input.addEventListener('input', () => renderClientSuggestions(searchId, hiddenId, suggestionsId));
   input.addEventListener('focus', () => {
-    if (input.value.trim() && !document.getElementById(hiddenId).value) {
-      renderClientSuggestions(searchId, hiddenId, suggestionsId);
+    if (input.value.trim() && !hidden.value) renderClientSuggestions(searchId, hiddenId, suggestionsId);
+  });
+  input.addEventListener('keydown', e => {
+    if (!box.classList.contains('open')) {
+      if (e.key === 'ArrowDown' && input.value.trim()) {
+        renderClientSuggestions(searchId, hiddenId, suggestionsId);
+        setActiveClientSuggestion(box, 0);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    const items = [...box.querySelectorAll('.client-suggestion')];
+    if (!items.length) {
+      if (e.key === 'Escape') closeClientSuggestions(suggestionsId);
+      return;
+    }
+
+    let active = Number(box.dataset.activeIndex ?? -1);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      active = active < items.length - 1 ? active + 1 : 0;
+      setActiveClientSuggestion(box, active);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = active > 0 ? active - 1 : items.length - 1;
+      setActiveClientSuggestion(box, active);
+    } else if (e.key === 'Enter' && active >= 0) {
+      e.preventDefault();
+      selectClientFromSearch(searchId, hiddenId, suggestionsId, items[active].dataset.clientId);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeClientSuggestions(suggestionsId);
     }
   });
   box.addEventListener('mousedown', e => {
@@ -492,7 +576,7 @@ function refreshClientSelectors() {
 function renderClients(filter = '') {
   const q = filter.toLowerCase();
   document.getElementById('clientsTable').innerHTML = db.clients.filter(c => [c.cedula, c.name, c.phone, c.email, c.address].join(' ').toLowerCase().includes(q)).map(c => `
-    <tr><td>${esc(c.cedula)}</td><td><strong>${esc(c.name)}</strong></td><td>${esc(c.phone)}</td><td>${esc(c.email || '-')}</td><td>${esc(c.address)}</td><td><button class="mini" onclick="editClient('${c.id}')">Editar</button></td></tr>
+    <tr><td>${esc(c.cedula)}</td><td><strong>${esc(c.name)}</strong></td><td>${esc(c.phone)}</td><td>${esc(c.email || '-')}</td><td>${esc(c.address)}</td><td><div class="action-row"><button class="mini primary-mini" onclick="openClientHistory('${c.id}')">Historial</button><button class="mini" onclick="editClient('${c.id}')">Editar</button></div></td></tr>
   `).join('') || '<tr><td colspan="6" class="empty">No hay clientes.</td></tr>';
   refreshClientSelectors();
 }
@@ -538,6 +622,46 @@ window.editClient = id => {
   document.getElementById('clientEmail').value = c.email || '';
   document.getElementById('clientAddress').value = c.address;
   window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+function closeClientHistoryModal() {
+  const modal = document.getElementById('clientHistoryModal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+document.querySelectorAll('[data-close-client-history]').forEach(el => el.onclick = closeClientHistoryModal);
+
+window.openClientHistory = id => {
+  const c = db.clients.find(x => x.id === id);
+  if (!c) return;
+  const devices = db.devices.filter(d => d.clientId === id).slice().reverse();
+  const sales = db.sales.filter(s => s.clientId === id).slice().reverse();
+  const total = sales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+  const deviceRows = devices.map(d => `<tr>
+    <td><strong>${esc(d.order)}</strong><br><span class="muted">${esc(d.date || '')}</span></td>
+    <td>${esc(deviceTypeLabel(d))}<br><span class="muted">${esc(d.brand || '')} ${esc(d.model || '')}</span></td>
+    <td>${esc(d.serial || '-')}</td>
+    <td><span class="status ${deviceIsRepaired(d) ? 'good' : 'warn'}">${esc(d.status || '')}</span></td>
+    <td>${esc(warrantyLabel(d))}</td>
+    <td><button class="mini" onclick="printWorkOrder('${d.id}')">Orden</button></td>
+  </tr>`).join('') || '<tr><td colspan="6" class="empty">Este cliente no tiene equipos registrados.</td></tr>';
+  const saleRows = sales.map(s => `<tr>
+    <td><strong>${esc(s.number)}</strong></td><td>${esc(saleTypeLabel(s))}</td><td>${esc(s.date || '')}</td><td>${esc(s.payment || '-')}</td><td><strong>${money(s.total)}</strong></td><td><button class="mini" onclick="printInvoice('${s.id}','a4')">Imprimir</button></td>
+  </tr>`).join('') || '<tr><td colspan="6" class="empty">Este cliente no tiene facturas registradas.</td></tr>';
+  document.getElementById('clientHistoryContent').innerHTML = `
+    <div class="history-head"><div><span class="history-kicker">HISTORIAL DEL CLIENTE</span><h2>${esc(c.name)}</h2><p>${esc(c.cedula)} · ${esc(c.phone || '-')} · ${esc(c.email || '-')}</p></div></div>
+    <div class="history-summary-grid">
+      <div class="history-stat"><span>Equipos</span><strong>${devices.length}</strong></div>
+      <div class="history-stat"><span>Facturas</span><strong>${sales.length}</strong></div>
+      <div class="history-stat"><span>Total facturado</span><strong>${money(total)}</strong></div>
+    </div>
+    <section class="history-section"><h3>Equipos y reparaciones</h3><div class="table-wrap"><table><thead><tr><th>Orden</th><th>Equipo</th><th>Serie</th><th>Estado</th><th>Garantía</th><th></th></tr></thead><tbody>${deviceRows}</tbody></table></div></section>
+    <section class="history-section"><h3>Compras y facturas</h3><div class="table-wrap"><table><thead><tr><th>Comprobante</th><th>Tipo</th><th>Fecha</th><th>Pago</th><th>Total</th><th></th></tr></thead><tbody>${saleRows}</tbody></table></div></section>`;
+  const modal = document.getElementById('clientHistoryModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
 };
 
 function deviceTypeLabel(d) {
@@ -596,10 +720,13 @@ document.getElementById('deviceSearch').oninput = e => renderDevices(e.target.va
 document.getElementById('deviceStatusFilter').onchange = () => renderDevices(document.getElementById('deviceSearch').value || '');
 document.getElementById('deviceForm').onsubmit = e => {
   e.preventDefault();
+  const shouldPrint = e.submitter?.id === 'savePrintDeviceBtn';
   const id = document.getElementById('deviceId').value;
   const prev = db.devices.find(d => d.id === id);
   if (!document.getElementById('deviceClient').value) return toast('Busque y seleccione un cliente por nombre o cédula');
   if (document.getElementById('deviceType').value === 'Otro' && !document.getElementById('deviceCustomType').value.trim()) return toast('Escribe el nombre del otro equipo');
+  const warrantyDays = Math.max(0, Number(document.getElementById('deviceWarrantyDays').value || 0));
+  const warrantyStart = prev?.warrantyStart || '';
   const obj = {
     ...(prev || {}),
     id: id || uid('EQ'),
@@ -613,15 +740,22 @@ document.getElementById('deviceForm').onsubmit = e => {
     damage: document.getElementById('deviceDamage').value.trim(),
     notes: document.getElementById('deviceNotes').value.trim(),
     status: document.getElementById('deviceStatus').value,
+    warrantyDays,
+    warrantyNotes: document.getElementById('deviceWarrantyNotes').value.trim(),
+    warrantyStart,
+    warrantyUntil: warrantyStart && warrantyDays ? addDaysToDateKey(warrantyStart, warrantyDays) : '',
     date: prev?.date || now()
   };
   if (id) db.devices = db.devices.map(d => d.id === id ? obj : d); else db.devices.push(obj);
+  const savedId = obj.id;
   e.target.reset();
   document.getElementById('deviceId').value = '';
   document.getElementById('deviceCustomType').value = '';
+  document.getElementById('deviceWarrantyPeriod').value = '';
   toggleCustomDeviceType();
   save();
-  toast('Equipo guardado');
+  if (shouldPrint) printWorkOrder(savedId);
+  toast(shouldPrint ? 'Equipo guardado. Orden lista para imprimir' : 'Equipo guardado');
 };
 
 window.editDevice = id => {
@@ -636,6 +770,9 @@ window.editDevice = id => {
   document.getElementById('deviceClientSearch').value = clientDisplayText(selectedClient);
   closeClientSuggestions('deviceClientSuggestions');
   document.getElementById('deviceCustomType').value = d.customType || '';
+  document.getElementById('deviceWarrantyDays').value = Number(d.warrantyDays || 0);
+  document.getElementById('deviceWarrantyNotes').value = d.warrantyNotes || '';
+  document.getElementById('deviceWarrantyPeriod').value = d.warrantyStart && d.warrantyUntil ? `${d.warrantyStart} al ${d.warrantyUntil}` : '';
   toggleCustomDeviceType();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
@@ -864,6 +1001,8 @@ document.getElementById('finishRepairBtn').onclick = () => {
   d.status = 'Reparado';
   d.repairedAt = now();
   d.repairSaleId = sale.id;
+  d.warrantyStart = Number(d.warrantyDays || 0) > 0 ? today() : '';
+  d.warrantyUntil = d.warrantyStart ? addDaysToDateKey(d.warrantyStart, d.warrantyDays) : '';
   db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, date: now(), type: 'ingreso', amount: total, concept: `Reparación ${d.order} · ${sale.number}` });
 
   repairCart = [];
@@ -884,6 +1023,8 @@ window.printWorkOrder = id => {
     <div class="doc-section"><h3>Datos del equipo</h3><table><tbody><tr><th>Tipo</th><td>${esc(deviceTypeLabel(d))}</td><th>Marca</th><td>${esc(d.brand)}</td></tr><tr><th>Modelo</th><td>${esc(d.model)}</td><th>Serie</th><td>${esc(d.serial || '-')}</td></tr></tbody></table></div>
     <div class="doc-section"><h3>Daño reportado</h3><p>${esc(d.damage)}</p></div>
     <div class="doc-section"><h3>Observaciones</h3><p>${esc(d.notes || 'Sin observaciones.')}</p></div>
+    <div class="doc-section"><h3>Garantía de reparación</h3><p><strong>${esc(warrantyLabel(d))}</strong>${d.warrantyNotes ? `<br>${esc(d.warrantyNotes)}` : ''}</p></div>
+    ${db.company.serviceClause ? `<div class="doc-section doc-terms"><h3>Cláusulas / condiciones de servicio</h3><p>${esc(db.company.serviceClause).replace(/\n/g, '<br>')}</p></div>` : ''}
     <div class="signatures"><div>____________________________<br>Firma del cliente</div><div>____________________________<br>Recepción / técnico</div></div>
   `;
   printHtml(`Orden ${d.order}`, body, 'order');
@@ -1081,7 +1222,7 @@ window.deleteInvoice = (id, fromDevice = false) => {
     if (d) {
       d.repairSaleId = '';
       d.status = 'En reparación';
-      delete d.repairedAt; delete d.deliveredAt;
+      delete d.repairedAt; delete d.deliveredAt; d.warrantyStart = ''; d.warrantyUntil = '';
     }
   }
   db.sales = db.sales.filter(s => s.id !== id);
@@ -1128,6 +1269,7 @@ window.printInvoice = (id, format = 'a4') => {
       <div><span>Equipo</span><strong>${esc(deviceTypeLabel(d))} · ${esc(d.brand)} ${esc(d.model)}</strong></div>
       <div><span>N.º de serie</span><strong>${esc(d.serial || '-')}</strong></div>
       <div><span>Estado</span><strong>REPARADO</strong></div>
+      <div><span>Garantía</span><strong>${esc(warrantyLabel(d))}</strong></div>
     </section>` : '';
 
   if (format === 'ticket') {
@@ -1143,6 +1285,8 @@ window.printInvoice = (id, format = 'a4') => {
         ${ticketRepair}
         <table class="ticket-table"><thead><tr><th>Cant.</th><th>Descripción</th><th>P.U.</th><th>Total</th></tr></thead><tbody>${ticketItems}</tbody></table>
         <div class="ticket-totals"><div><span>SUBTOTAL</span><b>${money(s.subtotal)}</b></div><div><span>IVA ${Number(s.taxRate || 0)}%</span><b>${money(s.tax)}</b></div><div class="ticket-grand"><span>TOTAL</span><b>${money(s.total)}</b></div></div>
+        ${s.source === 'repair' && d && Number(d.warrantyDays || 0) > 0 ? `<div class="ticket-note"><b>Garantía:</b> ${esc(warrantyLabel(d))}</div>` : ''}
+        ${s.source === 'repair' && db.company.serviceClause ? `<div class="ticket-note"><b>Condiciones:</b> ${esc(db.company.serviceClause)}</div>` : ''}
         <div class="ticket-note">Gracias por su compra. Conserve este comprobante.</div>
         <div class="ticket-internal">Documento interno · ${esc(companyName)}</div>
       </div>`;
@@ -1198,7 +1342,8 @@ window.printInvoice = (id, format = 'a4') => {
       <section class="pro-bottom">
         <div class="pro-observations">
           <div class="box-title">OBSERVACIONES</div>
-          <p>${s.source === 'repair' && d ? `Servicio correspondiente a la orden ${esc(s.order || d.order)}. Equipo: ${esc(deviceTypeLabel(d))} ${esc(d.brand)} ${esc(d.model)}.` : 'Venta de productos registrada en el sistema.'}</p>
+          <p>${s.source === 'repair' && d ? `Servicio correspondiente a la orden ${esc(s.order || d.order)}. Equipo: ${esc(deviceTypeLabel(d))} ${esc(d.brand)} ${esc(d.model)}.${d.warrantyNotes ? ` Garantía: ${esc(d.warrantyNotes)}` : ''}` : 'Venta de productos registrada en el sistema.'}</p>
+          ${s.source === 'repair' && db.company.serviceClause ? `<div class="invoice-terms"><strong>Condiciones de servicio:</strong><br>${esc(db.company.serviceClause).replace(/\n/g, '<br>')}</div>` : ''}
           <div class="thanks-message"><strong>Gracias por confiar en ${esc(companyName)}.</strong><br>Conserve este comprobante para futuras consultas.</div>
         </div>
         <div class="pro-totals">
@@ -1259,9 +1404,9 @@ function printHtml(title, body, kind = 'invoice') {
     .info-row span{font-weight:800;color:#667085}
     .info-row strong{font-weight:700;color:#1f2937;overflow-wrap:anywhere}
 
-    .repair-strip{display:grid;grid-template-columns:.82fr 1.42fr 1fr .55fr;gap:0;border:1px solid #d3dbe5;border-radius:7px;overflow:hidden;margin-top:2.4mm;background:#fbfdff}
+    .repair-strip{display:grid;grid-template-columns:.72fr 1.18fr .82fr .55fr 1fr;gap:0;border:1px solid #d3dbe5;border-radius:7px;overflow:hidden;margin-top:2.4mm;background:#fbfdff}
     .repair-strip>div{padding:1.9mm 2.1mm;border-right:1px solid #e2e8f0}
-    .repair-strip>div:last-child{border-right:0;background:#ecfdf5}
+    .repair-strip>div:last-child{border-right:0}.repair-strip>div:nth-child(4){background:#ecfdf5}
     .repair-strip span{display:block;font-size:6.2px;color:#6d7785;text-transform:uppercase;font-weight:900;margin-bottom:.4mm}
     .repair-strip strong{font-size:7.4px;line-height:1.15}
 
@@ -1276,7 +1421,7 @@ function printHtml(title, body, kind = 'invoice') {
     .pro-bottom{display:grid;grid-template-columns:1fr 47mm;gap:3mm;margin-top:2.8mm;align-items:start}
     .pro-observations{border:1px solid #d8e0ea;border-radius:7px;overflow:hidden;background:#fff}
     .pro-observations .box-title{background:linear-gradient(90deg,var(--accent2),#344054)}
-    .pro-observations p{font-size:7.6px;color:#515b68;line-height:1.28;margin:0;padding:1.8mm 2.4mm .5mm}
+    .pro-observations p{font-size:7.6px;color:#515b68;line-height:1.28;margin:0;padding:1.8mm 2.4mm .5mm}.invoice-terms{margin:1mm 2.4mm;padding:1.4mm 1.6mm;border:1px solid #e1e6ed;border-radius:5px;background:#fafbfc;font-size:6.8px;line-height:1.3;color:#596273}
     .thanks-message{margin:0 2.4mm 1.8mm;padding-top:1.4mm;border-top:1px solid #e5eaf0;font-size:7.2px;line-height:1.22;color:#475467}
     .pro-totals{border:1px solid #ced7e2;border-radius:7px;overflow:hidden;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.05)}
     .pro-totals>div{display:flex;justify-content:space-between;gap:4mm;padding:1.8mm 2mm;border-bottom:1px solid #eef2f6;font-size:7.9px}
@@ -1332,6 +1477,7 @@ function renderCompany() {
   document.getElementById('companyAddress').value = c.address || '';
   document.getElementById('companyEmail').value = c.email || '';
   document.getElementById('companyTaxRate').value = c.taxRate ?? 15;
+  document.getElementById('companyServiceClause').value = c.serviceClause || '';
   document.getElementById('primaryColor').value = c.primary || '#2563eb';
   document.getElementById('secondaryColor').value = c.secondary || '#0f172a';
   renderLogoPreview(logoDraftUrl || c.logo || '');
@@ -1368,7 +1514,8 @@ document.getElementById('companyForm').onsubmit = async e => {
     phone: document.getElementById('companyPhone').value.trim(),
     address: document.getElementById('companyAddress').value.trim(),
     email: document.getElementById('companyEmail').value.trim(),
-    taxRate: Number(document.getElementById('companyTaxRate').value || 0)
+    taxRate: Number(document.getElementById('companyTaxRate').value || 0),
+    serviceClause: document.getElementById('companyServiceClause').value.trim()
   });
   if (logoDraftUrl) db.company.logo = logoDraftUrl;
   logoDraftUrl = '';
@@ -1416,7 +1563,7 @@ function closeLogoModal() {
 document.getElementById('brandLogo').onclick = openLogoModal;
 document.getElementById('companyLogoPreview').onclick = openLogoModal;
 document.querySelectorAll('[data-close-logo]').forEach(el => el.onclick = closeLogoModal);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLogoModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLogoModal(); closeClientHistoryModal(); } });
 
 
 function renderMachineInventory() {
@@ -1515,7 +1662,7 @@ const guideState = { view: 'dashboard', index: 0, speaking: false };
 const guideSteps = {
   dashboard: [
     { selector: '#sidebarToggle', icon: '↔️', title: 'Minimizar o ampliar el menú', text: 'Usa este botón para hacer el menú lateral más pequeño y ganar espacio en pantalla. Vuelve a pulsarlo para ampliarlo.' },
-    { selector: '#view-dashboard .stats-grid', icon: '📊', title: 'Resumen del negocio', text: 'Estas tarjetas muestran rápidamente ingresos del día, clientes, equipos pendientes, equipos reparados, total de equipos y productos con stock bajo.' },
+    { selector: '#view-dashboard .stats-grid', icon: '📊', title: 'Resumen del negocio', text: 'Estas tarjetas muestran ingresos y comprobantes del día, clientes, equipos pendientes, equipos listos para entregar, equipos reparados y alertas de stock.' },
     { selector: '#dashboardCash', icon: '💵', title: 'Estado de caja', text: 'Aquí puedes confirmar si la caja está abierta o cerrada y revisar el valor actual antes de realizar cobros.' },
     { selector: '#recentDevices', icon: '🛠️', title: 'Equipos recientes', text: 'Este bloque muestra los últimos equipos que ingresaron al taller y te ayuda a revisar rápidamente su estado.' },
     { selector: '#recentSales', icon: '🧾', title: 'Últimos comprobantes', text: 'Aquí aparecen las ventas y reparaciones facturadas recientemente, con cliente, fecha y total.' }
@@ -1529,12 +1676,12 @@ const guideSteps = {
     { selector: '#clientForm', icon: '👤', title: 'Registrar un cliente', text: 'Ingresa cédula o RUC, nombre, teléfono, correo y dirección. Estos datos se utilizarán al registrar equipos, ventas y facturas.' },
     { selector: '#clientEmail', icon: '✉️', title: 'Correo del cliente', text: 'Registra un correo válido para poder preparar o enviar la factura al cliente desde el módulo de facturas.' },
     { selector: '#clientSearch', icon: '🔎', title: 'Buscar clientes', text: 'Puedes buscar por cédula, nombre, teléfono o correo para encontrar rápidamente un registro existente.' },
-    { selector: '#clientsTable', icon: '📇', title: 'Listado de clientes', text: 'Aquí se muestran los clientes guardados y las acciones disponibles para administrar cada registro.' }
+    { selector: '#clientsTable', icon: '📇', title: 'Listado e historial', text: 'Aquí se muestran los clientes guardados. Usa Historial para revisar sus equipos, reparaciones, facturas y total facturado.' }
   ],
   equipos: [
     { selector: '#deviceClientSearch', icon: '🔎', title: 'Buscar al propietario', text: 'Escribe parte del nombre o de la cédula. Aparecerán coincidencias debajo de la misma barra; toca la persona correcta para seleccionarla.' },
     { selector: '#deviceType', icon: '📷', title: 'Tipo de equipo', text: 'Selecciona el tipo de máquina. Si eliges Otro aparecerá un campo donde puedes escribir Cámara, DVR, NVR, UPS u otro equipo, y ese nombre quedará guardado.' },
-    { selector: '#deviceForm', icon: '📝', title: 'Registrar el ingreso', text: 'Completa marca, modelo, serie, daño reportado, observaciones y estado. Al guardar se genera la orden de trabajo del equipo.' },
+    { selector: '#deviceForm', icon: '📝', title: 'Registrar el ingreso', text: 'Completa los datos del equipo y, si corresponde, los días y condiciones de garantía. Puedes Guardar o Guardar e imprimir orden para obtener la orden inmediatamente.' },
     { selector: '#devicesTable', icon: '🗂️', title: 'Órdenes ingresadas', text: 'Aquí puedes revisar las máquinas recibidas, su estado y las acciones disponibles. El propietario también dispone de opciones administrativas como eliminar cuando corresponda.' },
     { selector: '#repairOrderSearch', icon: '🔍', title: 'Buscar una reparación', text: 'Para reparar un equipo, busca por número de orden, nombre del cliente o cédula y luego carga la orden correspondiente.' },
     { selector: '#repairProductSearch', icon: '📦', title: 'Añadir repuestos', text: 'Busca los productos usados en la reparación por código, nombre o marca. Al agregarlos, el stock se descuenta al finalizar la reparación.' },
@@ -1561,7 +1708,7 @@ const guideSteps = {
     { selector: '#machineInventoryTable', icon: '📑', title: 'Historial de equipos', text: 'Esta tabla concentra el historial de las máquinas ingresadas al taller con propietario, identificación, equipo, serie, fecha y estado.' }
   ],
   ventas: [
-    { selector: '#saleClientSearch', icon: '👤', title: 'Buscar cliente', text: 'Escribe parte del nombre o de la cédula y selecciona al cliente desde las coincidencias que aparecen debajo de la misma barra.' },
+    { selector: '#saleClientSearch', icon: '👤', title: 'Buscar cliente', text: 'Escribe parte de la cédula o del nombre. Debajo aparecerán las coincidencias con cédula, nombre y teléfono; selecciona una para asignar el cliente.' },
     { selector: '#saleProductSearch', icon: '📦', title: 'Buscar producto', text: 'Busca el producto por código, nombre o marca y selecciónalo en la lista.' },
     { selector: '#addProductBtn', icon: '➕', title: 'Agregar al detalle', text: 'Indica la cantidad y agrega el producto. El sistema verifica las existencias antes de completar la venta.' },
     { selector: '#cartList', icon: '🛒', title: 'Detalle de la venta', text: 'Aquí aparecen los productos agregados. Revisa cantidades y precios antes de finalizar.' },
@@ -1575,6 +1722,7 @@ const guideSteps = {
     { selector: '#companyForm', icon: '🏢', title: 'Datos de la empresa', text: 'Configura RUC, nombre del local, razón social, teléfono, dirección, correo y logo. Estos datos se utilizan en los comprobantes.' },
     { selector: '#companyTaxRate', icon: '％', title: 'IVA incluido', text: 'Define aquí el porcentaje de IVA. Los precios registrados ya incluyen ese IVA: un producto guardado a 60 dólares seguirá costando 60 dólares al cliente.' },
     { selector: '#companyLogoPreview', icon: '🖼️', title: 'Logo de la empresa', text: 'Carga y revisa aquí el logo que aparecerá en el sistema y en los comprobantes.' },
+    { selector: '#companyServiceClause', icon: '📜', title: 'Cláusulas de servicio', text: 'Escribe las condiciones propias de tu empresa. Se imprimirán en las órdenes de servicio y en los comprobantes de reparación.' },
     { selector: '#primaryColor', icon: '🎨', title: 'Colores del sistema', text: 'Elige los colores principales de la aplicación y pulsa Aplicar colores para personalizar la identidad visual del negocio.' },
     { selector: '#resetDataBtn', icon: '⚠️', title: 'Restablecer datos', text: 'Esta opción es delicada. Úsala únicamente si realmente necesitas restablecer la información de la aplicación.' }
   ]
