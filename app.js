@@ -259,8 +259,18 @@ const viewMeta = {
   configuracion: ['Configuración', 'Empresa, logo y colores']
 };
 
+function openGroupForView(v) {
+  const item = document.querySelector(`.nav-item[data-view="${v}"]`);
+  const group = item?.closest('.nav-group');
+  if (!group || document.body.classList.contains('sidebar-collapsed')) return;
+  group.classList.add('open');
+  group.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded', 'true');
+  saveSidebarGroups();
+}
+
 function showView(v) {
   document.querySelectorAll('.nav-item').forEach(x => x.classList.toggle('active', x.dataset.view === v));
+  openGroupForView(v);
   document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
   const target = document.getElementById('view-' + v);
   if (!target) return;
@@ -281,6 +291,37 @@ function showView(v) {
 }
 
 document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => showView(b.dataset.view));
+
+const SIDEBAR_GROUPS_KEY = 'soporte360_sidebar_groups_v14';
+function saveSidebarGroups() {
+  if (document.body.classList.contains('sidebar-collapsed')) return;
+  const state = {};
+  document.querySelectorAll('.nav-group').forEach(g => state[g.dataset.group] = g.classList.contains('open'));
+  localStorage.setItem(SIDEBAR_GROUPS_KEY, JSON.stringify(state));
+}
+function restoreSidebarGroups() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY) || 'null'); } catch (_) {}
+  document.querySelectorAll('.nav-group').forEach(g => {
+    const shouldOpen = saved && Object.prototype.hasOwnProperty.call(saved, g.dataset.group)
+      ? !!saved[g.dataset.group]
+      : g.dataset.group === 'gestion';
+    g.classList.toggle('open', shouldOpen);
+    g.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  });
+}
+restoreSidebarGroups();
+document.querySelectorAll('.nav-group-toggle').forEach(btn => {
+  btn.onclick = () => {
+    const group = btn.closest('.nav-group');
+    if (!group) return;
+    const willOpen = !group.classList.contains('open');
+    group.classList.toggle('open', willOpen);
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    saveSidebarGroups();
+  };
+});
+
 document.getElementById('todayLabel').textContent = new Date().toLocaleDateString('es-EC', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 document.getElementById('quickOpenCash').onclick = () => { showView('caja'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
@@ -290,6 +331,10 @@ function setSidebarCollapsed(collapsed) {
   btn.textContent = collapsed ? '›' : '‹';
   btn.title = collapsed ? 'Ampliar menú' : 'Minimizar menú';
   localStorage.setItem('soporte360_sidebar_collapsed', collapsed ? '1' : '0');
+  if (!collapsed) {
+    const activeView = document.querySelector('.nav-item.active')?.dataset.view;
+    if (activeView) openGroupForView(activeView);
+  }
 }
 document.getElementById('sidebarToggle').onclick = () => setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
 setSidebarCollapsed(localStorage.getItem('soporte360_sidebar_collapsed') === '1');

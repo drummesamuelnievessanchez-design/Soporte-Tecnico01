@@ -18,19 +18,53 @@
         <button id="sidebarToggle" class="sidebar-toggle" type="button" title="Minimizar menú" aria-label="Minimizar menú">‹</button>
       </div>
 
-      <nav id="nav">
-        <button class="nav-item active" data-view="dashboard"><span class="nav-icon">🏠</span><span class="nav-label">Inicio</span></button>
-        <button class="nav-item" data-view="caja"><span class="nav-icon">💵</span><span class="nav-label">Caja</span></button>
-        <button class="nav-item" data-view="clientes"><span class="nav-icon">👥</span><span class="nav-label">Clientes</span></button>
-        <button class="nav-item" data-view="equipos"><span class="nav-icon">🛠️</span><span class="nav-label">Equipos</span></button>
-        <button class="nav-item" data-view="productos"><span class="nav-icon">📦</span><span class="nav-label">Productos</span></button>
-        <button class="nav-item" data-view="inventario"><span class="nav-icon">📊</span><span class="nav-label">Inventario</span></button>
-        <button class="nav-item" data-view="inventario-equipos"><span class="nav-icon">🗂️</span><span class="nav-label">Inventario equipos</span></button>
-        <button class="nav-item" data-view="ventas"><span class="nav-icon">🧾</span><span class="nav-label">Ventas</span></button>
-        <button class="nav-item" data-view="proformas"><span class="nav-icon">📋</span><span class="nav-label">Proformas</span></button>
-        <button class="nav-item" data-view="cuentas-cobrar"><span class="nav-icon">💳</span><span class="nav-label">Cuentas por cobrar</span></button>
-        <button class="nav-item" data-view="facturas"><span class="nav-icon">📄</span><span class="nav-label">Facturas</span></button>
-        <button class="nav-item" data-view="configuracion"><span class="nav-icon">⚙️</span><span class="nav-label">Configuración</span></button>
+      <nav id="nav" aria-label="Menú principal">
+        <div class="nav-pinned" aria-label="Accesos principales">
+          <button class="nav-item active" data-view="dashboard" title="Inicio"><span class="nav-icon">🏠</span><span class="nav-label">Inicio</span></button>
+          <button class="nav-item" data-view="caja" title="Caja"><span class="nav-icon">💵</span><span class="nav-label">Caja</span></button>
+        </div>
+
+        <div class="nav-group open" data-group="gestion">
+          <button class="nav-group-toggle" type="button" aria-expanded="true" title="Gestión">
+            <span class="nav-group-icon">▦</span><span class="nav-group-label">Gestión</span><span class="nav-group-chevron">⌄</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-view="clientes" title="Clientes"><span class="nav-icon">👥</span><span class="nav-label">Clientes</span></button>
+            <button class="nav-item" data-view="equipos" title="Equipos"><span class="nav-icon">🛠️</span><span class="nav-label">Equipos</span></button>
+            <button class="nav-item" data-view="ventas" title="Ventas"><span class="nav-icon">🧾</span><span class="nav-label">Ventas</span></button>
+            <button class="nav-item" data-view="facturas" title="Facturas"><span class="nav-icon">📄</span><span class="nav-label">Facturas</span></button>
+          </div>
+        </div>
+
+        <div class="nav-group" data-group="inventario">
+          <button class="nav-group-toggle" type="button" aria-expanded="false" title="Inventario">
+            <span class="nav-group-icon">▤</span><span class="nav-group-label">Inventario</span><span class="nav-group-chevron">⌄</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-view="productos" title="Productos"><span class="nav-icon">📦</span><span class="nav-label">Productos</span></button>
+            <button class="nav-item" data-view="inventario" title="Inventario de productos"><span class="nav-icon">📊</span><span class="nav-label">Inventario</span></button>
+            <button class="nav-item" data-view="inventario-equipos" title="Inventario de equipos"><span class="nav-icon">🗂️</span><span class="nav-label">Inventario equipos</span></button>
+          </div>
+        </div>
+
+        <div class="nav-group" data-group="comercial">
+          <button class="nav-group-toggle" type="button" aria-expanded="false" title="Comercial">
+            <span class="nav-group-icon">◇</span><span class="nav-group-label">Comercial</span><span class="nav-group-chevron">⌄</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-view="proformas" title="Proformas"><span class="nav-icon">📋</span><span class="nav-label">Proformas</span></button>
+            <button class="nav-item" data-view="cuentas-cobrar" title="Cuentas por cobrar"><span class="nav-icon">💳</span><span class="nav-label">Cuentas por cobrar</span></button>
+          </div>
+        </div>
+
+        <div class="nav-group" data-group="sistema">
+          <button class="nav-group-toggle" type="button" aria-expanded="false" title="Sistema">
+            <span class="nav-group-icon">⚙</span><span class="nav-group-label">Sistema</span><span class="nav-group-chevron">⌄</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-view="configuracion" title="Configuración"><span class="nav-icon">⚙️</span><span class="nav-label">Configuración</span></button>
+          </div>
+        </div>
       </nav>
 
       <div class="sidebar-footer">

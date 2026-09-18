@@ -102,3 +102,48 @@ body.guide-active .guide-help-btn{opacity:.72}
 @media(max-width:1100px){.receivable-stats{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:760px){.receivable-stats{grid-template-columns:1fr 1fr}.proforma-actions{grid-template-columns:1fr}.payment-modal-card{padding:20px}}
 @media(max-width:480px){.receivable-stats{grid-template-columns:1fr}}
+
+/* ===== V14: menú lateral agrupado y desplegable ===== */
+.sidebar{padding-top:20px;padding-bottom:18px}
+.sidebar .brand{padding-bottom:16px}
+.sidebar nav{gap:5px}
+.nav-pinned{display:flex;flex-direction:column;gap:5px;padding-bottom:8px;margin-bottom:4px;border-bottom:1px solid rgba(255,255,255,.10)}
+.nav-group{border-radius:12px;overflow:hidden}
+.nav-group-toggle{width:100%;border:0;background:transparent;color:rgba(255,255,255,.72);display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:10px;cursor:pointer;text-align:left;font-size:11px;font-weight:800;letter-spacing:.075em;text-transform:uppercase;transition:background .18s,color .18s}
+.nav-group-toggle:hover{background:rgba(255,255,255,.075);color:#fff}
+.nav-group-icon{width:20px;min-width:20px;text-align:center;font-size:14px;line-height:1}
+.nav-group-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-group-chevron{margin-left:auto;font-size:16px;line-height:1;transition:transform .2s ease}
+.nav-group.open .nav-group-chevron{transform:rotate(180deg)}
+.nav-group-items{display:grid;grid-template-rows:0fr;transition:grid-template-rows .2s ease,opacity .18s ease;opacity:.25}
+.nav-group-items::before{content:'';overflow:hidden;grid-row:1/2}
+/* wrapper-less grid animation fallback */
+.nav-group:not(.open) .nav-group-items{display:none}
+.nav-group.open .nav-group-items{display:flex;flex-direction:column;gap:4px;opacity:1;padding:2px 0 7px}
+.nav-group .nav-item{margin-left:10px;width:calc(100% - 10px);padding:10px 12px;font-size:13px;border-radius:10px}
+.nav-group .nav-item .nav-icon{font-size:15px}
+.nav-pinned .nav-item{padding:11px 12px}
+.nav-item{transition:background .18s,color .18s,transform .18s}
+.nav-item:hover{transform:translateX(2px)}
+.nav-item.active{background:rgba(255,255,255,.13);box-shadow:inset 3px 0 0 var(--primary)}
+.nav-group:has(.nav-item.active)>.nav-group-toggle{color:#fff;background:rgba(255,255,255,.055)}
+
+/* Menú minimizado: solo iconos de los módulos, con tooltip nativo mediante title. */
+body.sidebar-collapsed .nav-group-toggle{display:none}
+body.sidebar-collapsed .nav-pinned{border-bottom:1px solid rgba(255,255,255,.10);padding-bottom:7px;margin-bottom:2px}
+body.sidebar-collapsed .nav-group{overflow:visible}
+body.sidebar-collapsed .nav-group-items,
+body.sidebar-collapsed .nav-group:not(.open) .nav-group-items{display:flex;flex-direction:column;gap:3px;opacity:1;padding:0}
+body.sidebar-collapsed .nav-group .nav-item{margin-left:0;width:100%;padding:10px 7px}
+body.sidebar-collapsed .nav-item:hover{transform:none}
+body.sidebar-collapsed .sidebar nav{gap:3px}
+
+@media(max-width:760px){
+  .sidebar nav{display:flex;grid-template-columns:none}
+  .nav-pinned{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .nav-group .nav-item{margin-left:8px;width:calc(100% - 8px)}
+  body.sidebar-collapsed .nav-group-toggle{display:flex}
+  body.sidebar-collapsed .nav-group:not(.open) .nav-group-items{display:none}
+  body.sidebar-collapsed .nav-group.open .nav-group-items{display:flex}
+  body.sidebar-collapsed .nav-group .nav-item{margin-left:8px;width:calc(100% - 8px);padding:10px 12px}
+}
