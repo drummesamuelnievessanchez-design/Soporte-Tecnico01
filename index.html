@@ -156,7 +156,7 @@
           <article class="panel">
             <div class="panel-head"><h3>Buscar equipo</h3></div>
             <input class="search" id="deviceSearch" placeholder="Orden, cliente, marca, modelo, serie o daño">
-            <div class="info-note"><strong>Flujo de reparación:</strong> selecciona una orden o usa el botón <b>Reparar</b>. Allí agregas repuestos del inventario y la mano de obra.</div>
+            <div class="info-note"><strong>Flujo de reparación:</strong> en cada orden usa el botón <b>Factura de reparación</b>. Se abrirá un módulo separado para agregar repuestos, mano de obra y generar la factura.</div>
           </article>
         </div>
 
@@ -172,9 +172,20 @@
           <div class="table-wrap"><table><thead><tr><th>Orden</th><th>Cliente</th><th>Equipo</th><th>Serie</th><th>Daño</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="devicesTable"></tbody></table></div>
         </article>
 
+      </section>
+
+      <section id="view-reparaciones" class="view">
+        <div class="repair-module-top">
+          <button type="button" class="btn ghost" id="backToDevicesBtn">← Volver a Equipos</button>
+          <div class="repair-module-copy">
+            <strong>Módulo independiente</strong>
+            <span>Selecciona una orden o entra desde el botón “Factura de reparación” de Equipos.</span>
+          </div>
+        </div>
+
         <article class="panel repair-panel" id="repairPanel">
           <div class="panel-head repair-head">
-            <div><h3>Punto de reparación</h3><p>Repuestos utilizados + mano de obra vinculados a una orden.</p></div>
+            <div><h3>Factura de reparación</h3><p>Repuestos, mano de obra y cobro vinculados a una orden de servicio.</p></div>
             <span class="status warn" id="repairStatusLabel">Seleccione una orden</span>
           </div>
 
@@ -223,6 +234,7 @@
             </div>
           </div>
         </article>
+
       </section>
 
       <section id="view-productos" class="view">

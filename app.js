@@ -242,7 +242,8 @@ const viewMeta = {
   dashboard: ['Panel principal', 'Resumen general del negocio'],
   caja: ['Caja', 'Apertura, movimientos y cierre'],
   clientes: ['Clientes', 'Registro y administración de clientes'],
-  equipos: ['Equipos', 'Recepción, reparación y seguimiento técnico'],
+  equipos: ['Equipos', 'Recepción y seguimiento de equipos'],
+  reparaciones: ['Factura de reparación', 'Repuestos, mano de obra y facturación técnica'],
   productos: ['Productos', 'Registro y edición de productos'],
   inventario: ['Inventario', 'Existencias, valoración y stock disponible'],
   'inventario-equipos': ['Inventario de equipos', 'Historial y estado de máquinas ingresadas'],
@@ -260,6 +261,11 @@ function showView(v) {
   document.getElementById('pageTitle').textContent = viewMeta[v][0];
   document.getElementById('pageSubtitle').textContent = viewMeta[v][1];
   if (v === 'inventario-equipos') renderMachineInventory();
+  if (v === 'reparaciones') {
+    renderRepairOrderOptions();
+    renderRepairProducts();
+    renderRepairWorkspace();
+  }
 }
 
 document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -700,7 +706,8 @@ function renderDevices(filter = '') {
   document.getElementById('devicesTable').innerHTML = filtered.map(d => {
     const c = db.clients.find(x => x.id === d.clientId);
     const alreadyInvoiced = !!d.repairSaleId;
-    const invoiceButton = alreadyInvoiced ? `<button class="mini good-mini" onclick="printInvoice('${d.repairSaleId}')">Factura</button>${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${d.repairSaleId}', true)">Eliminar factura</button>` : ''}` : `<button class="mini primary-mini" onclick="openRepair('${d.id}')">Reparar</button>`;
+    const invoiceButton = alreadyInvoiced ? `<button class="mini good-mini" onclick="printInvoice('${d.repairSaleId}')">Factura</button>${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${d.repairSaleId}', true)">Eliminar factura</button>` : ''}` : '';
+    const repairButton = !alreadyInvoiced ? `<button class="mini primary-mini repair-invoice-action" onclick="openRepair('${d.id}')">Factura de reparación</button>` : '';
     const deliveredButton = d.status === 'Reparado' ? `<button class="mini" onclick="markDelivered('${d.id}')">Entregado</button>` : '';
     return `<tr>
       <td><strong>${esc(d.order)}</strong><br><span class="muted">${esc(d.date || '')}</span></td>
@@ -709,7 +716,7 @@ function renderDevices(filter = '') {
       <td>${esc(d.serial || '-')}</td>
       <td>${esc(d.damage)}</td>
       <td><span class="status ${d.status === 'Reparado' || d.status === 'Entregado' ? 'good' : ''}">${esc(d.status)}</span></td>
-      <td><div class="action-row">${invoiceButton}${deliveredButton}<button class="mini" onclick="editDevice('${d.id}')">Editar</button><button class="mini" onclick="printWorkOrder('${d.id}')">Orden</button>${isOwner() ? `<button class="mini danger" onclick="deleteDevice('${d.id}')">Eliminar equipo</button>` : ''}</div></td>
+      <td><div class="action-row">${invoiceButton}${deliveredButton}<button class="mini" onclick="editDevice('${d.id}')">Editar</button><button class="mini" onclick="printWorkOrder('${d.id}')">Orden</button>${repairButton}${isOwner() ? `<button class="mini danger" onclick="deleteDevice('${d.id}')">Eliminar equipo</button>` : ''}</div></td>
     </tr>`;
   }).join('') || '<tr><td colspan="7" class="empty">No hay equipos.</td></tr>';
 
@@ -851,9 +858,15 @@ document.getElementById('repairOrderSelect').onchange = e => {
 };
 
 window.openRepair = id => {
+  showView('reparaciones');
+  renderRepairOrderOptions();
+  loadRepairOrder(id, false);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+document.getElementById('backToDevicesBtn').onclick = () => {
   showView('equipos');
-  loadRepairOrder(id, true);
-  setTimeout(() => document.getElementById('repairPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
 function loadRepairOrder(id, scroll = false) {
@@ -1682,11 +1695,14 @@ const guideSteps = {
     { selector: '#deviceClientSearch', icon: '🔎', title: 'Buscar al propietario', text: 'Escribe parte del nombre o de la cédula. Aparecerán coincidencias debajo de la misma barra; toca la persona correcta para seleccionarla.' },
     { selector: '#deviceType', icon: '📷', title: 'Tipo de equipo', text: 'Selecciona el tipo de máquina. Si eliges Otro aparecerá un campo donde puedes escribir Cámara, DVR, NVR, UPS u otro equipo, y ese nombre quedará guardado.' },
     { selector: '#deviceForm', icon: '📝', title: 'Registrar el ingreso', text: 'Completa los datos del equipo y, si corresponde, los días y condiciones de garantía. Puedes Guardar o Guardar e imprimir orden para obtener la orden inmediatamente.' },
-    { selector: '#devicesTable', icon: '🗂️', title: 'Órdenes ingresadas', text: 'Aquí puedes revisar las máquinas recibidas, su estado y las acciones disponibles. El propietario también dispone de opciones administrativas como eliminar cuando corresponda.' },
-    { selector: '#repairOrderSearch', icon: '🔍', title: 'Buscar una reparación', text: 'Para reparar un equipo, busca por número de orden, nombre del cliente o cédula y luego carga la orden correspondiente.' },
-    { selector: '#repairProductSearch', icon: '📦', title: 'Añadir repuestos', text: 'Busca los productos usados en la reparación por código, nombre o marca. Al agregarlos, el stock se descuenta al finalizar la reparación.' },
-    { selector: '#addRepairServiceBtn', icon: '🧰', title: 'Añadir mano de obra', text: 'Escribe el trabajo realizado y su valor. La mano de obra queda vinculada a la reparación, no al módulo de ventas de mostrador.' },
-    { selector: '#finishRepairBtn', icon: '✅', title: 'Finalizar reparación', text: 'Cuando todo esté correcto, este botón marca el equipo como reparado, registra el cobro y genera la factura correspondiente.' }
+    { selector: '#devicesTable', icon: '🗂️', title: 'Órdenes ingresadas', text: 'Aquí administras las órdenes. El botón Factura de reparación abre un módulo separado para trabajar repuestos, mano de obra y cobro sin recargar esta pantalla.' }
+  ],
+  reparaciones: [
+    { selector: '#repairOrderSummary', icon: '🧾', title: 'Orden de reparación', text: 'Al entrar desde Equipos se carga automáticamente la orden elegida. También puedes seleccionar otra orden desde la parte superior.' },
+    { selector: '#repairProductSearch', icon: '📦', title: 'Añadir repuestos', text: 'Busca los productos usados en la reparación por código, nombre o marca. El stock se descuenta únicamente al finalizar y facturar la reparación.' },
+    { selector: '#addRepairServiceBtn', icon: '🧰', title: 'Añadir mano de obra', text: 'Registra la descripción del servicio realizado y su valor con IVA incluido.' },
+    { selector: '#repairCartList', icon: '📋', title: 'Detalle de reparación', text: 'Revisa en un solo lugar todos los repuestos y servicios agregados antes de cobrar.' },
+    { selector: '#finishRepairBtn', icon: '✅', title: 'Generar factura de reparación', text: 'Con la caja abierta, este botón marca el equipo como reparado, descuenta repuestos, registra el ingreso y genera la factura.' }
   ],
   productos: [
     { selector: '#productCode', icon: '🏷️', title: 'Código único', text: 'Cada producto debe tener un código diferente. El sistema valida que no exista otro producto con el mismo código antes de guardarlo.' },
@@ -1729,6 +1745,8 @@ const guideSteps = {
 };
 
 function getCurrentGuideView() {
+  const activeView = document.querySelector('.view.active');
+  if (activeView?.id?.startsWith('view-')) return activeView.id.replace(/^view-/, '');
   return document.querySelector('.nav-item.active')?.dataset.view || 'dashboard';
 }
 
