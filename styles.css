@@ -918,3 +918,156 @@ body.sidebar-collapsed .nav-icon .ui-icon{width:17px;height:17px}
 @media(max-width:480px){
   .stats-grid{grid-template-columns:1fr}
 }
+
+/* =====================================================================
+   V16.1 · MENÚ Y SESIÓN PROFESIONAL
+   Refinamiento visual del panel lateral y cierre de sesión.
+   ===================================================================== */
+:root{
+  --sidebar-deep:color-mix(in srgb,var(--secondary) 72%,#061326);
+  --sidebar-deeper:color-mix(in srgb,var(--secondary) 58%,#030b18);
+  --sidebar-line:rgba(255,255,255,.09);
+  --sidebar-text:#dce6f3;
+  --sidebar-muted:#92a5bc;
+}
+.sidebar{
+  background:linear-gradient(180deg,var(--sidebar-deep) 0%,var(--sidebar-deeper) 100%);
+  border-right:1px solid rgba(9,30,66,.16);
+  box-shadow:6px 0 28px rgba(15,23,42,.07);
+}
+.sidebar .brand{
+  min-height:64px;
+  padding:3px 3px 15px;
+  margin-bottom:3px;
+  border-bottom:1px solid var(--sidebar-line);
+}
+.brand-logo{
+  width:43px;height:43px;min-width:43px;
+  border-radius:10px;
+  background:#fff;
+  box-shadow:0 4px 12px rgba(0,0,0,.16);
+  border:1px solid rgba(255,255,255,.5);
+}
+.brand h1{font-size:13px;font-weight:780;letter-spacing:-.01em;color:#fff;max-width:128px}
+.brand small{font-size:9px;color:var(--sidebar-muted);opacity:1;line-height:1.25}
+.sidebar-toggle{
+  width:29px;height:29px;
+  border-radius:7px;
+  font-size:19px;
+  color:#d9e4f2;
+  background:rgba(255,255,255,.055);
+  border-color:rgba(255,255,255,.12);
+}
+.sidebar-toggle:hover{background:rgba(255,255,255,.11)}
+.nav-pinned{border-bottom:1px solid var(--sidebar-line)}
+.nav-item{color:var(--sidebar-text);border-radius:7px!important}
+.nav-item:hover{background:rgba(255,255,255,.065);color:#fff}
+.nav-item.active{
+  background:rgba(62,123,250,.20)!important;
+  color:#fff;
+  box-shadow:inset 3px 0 0 #66a2ff!important;
+}
+.nav-icon{color:#a9bdd6}
+.nav-item.active .nav-icon{color:#fff}
+.nav-group-toggle{color:#8fa4bd;font-size:9px;letter-spacing:.10em;border-radius:7px}
+.nav-group-toggle:hover,.nav-group:has(.nav-item.active)>.nav-group-toggle{color:#dbe8f7;background:rgba(255,255,255,.035)}
+.nav-group .nav-item{font-size:11px;padding-top:8px;padding-bottom:8px}
+.nav-group-chevron{font-size:13px;color:#7590ad}
+
+.sidebar-footer{
+  margin-top:auto;
+  padding-top:11px;
+  border-top:1px solid var(--sidebar-line);
+  display:grid;
+  gap:8px;
+}
+.cash-badge{
+  min-height:32px;
+  padding:7px 9px;
+  border-radius:7px;
+  font-size:9px;
+  font-weight:750;
+  border:1px solid transparent;
+}
+.cash-badge.open{background:rgba(16,185,129,.10);color:#9ce7c8;border-color:rgba(52,211,153,.16)}
+.cash-badge.closed{background:rgba(244,63,94,.08);color:#ffb5c0;border-color:rgba(251,113,133,.13)}
+.session-card{
+  min-width:0;
+  display:grid;
+  grid-template-columns:30px minmax(0,1fr) auto;
+  align-items:center;
+  gap:8px;
+  padding:7px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:9px;
+  background:rgba(255,255,255,.035);
+}
+.session-avatar{
+  width:30px;height:30px;
+  border-radius:7px;
+  display:grid;place-items:center;
+  background:rgba(255,255,255,.07);
+  color:#b8cae0;
+  border:1px solid rgba(255,255,255,.07);
+}
+.session-avatar .ui-icon{width:15px;height:15px}
+.session-copy{min-width:0;display:flex;flex-direction:column;gap:1px}
+.session-copy span{font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:#738aa5;font-weight:800}
+.session-copy strong{font-size:9px;color:#dce7f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:650}
+.sidebar-logout{
+  min-width:31px;height:31px;
+  border:1px solid rgba(248,113,113,.16);
+  background:rgba(239,68,68,.07);
+  color:#ff9a9a;
+  border-radius:7px;
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  cursor:pointer;
+  padding:0 8px;
+  font-size:9px;font-weight:760;
+  transition:background .1s,border-color .1s,color .1s;
+}
+.sidebar-logout:hover{background:rgba(239,68,68,.14);border-color:rgba(248,113,113,.28);color:#ffd2d2}
+.sidebar-logout .ui-icon{width:16px;height:16px;stroke-width:1.8}
+.logout-label{display:none}
+
+/* La cabecera queda enfocada en acciones de trabajo; la sesión vive en el menú. */
+.top-actions #quickOpenCash{font-weight:720}
+
+/* Confirmación nativa y ligera, sin librerías. */
+.logout-dialog{
+  width:min(430px,calc(100vw - 30px));
+  border:0;
+  padding:0;
+  border-radius:11px;
+  box-shadow:0 22px 65px rgba(15,23,42,.25);
+  color:var(--text);
+}
+.logout-dialog::backdrop{background:rgba(15,23,42,.48);backdrop-filter:blur(2px)}
+.logout-dialog-card{padding:22px;display:grid;grid-template-columns:42px 1fr;gap:13px;background:#fff}
+.logout-dialog-icon{width:42px;height:42px;border-radius:9px;background:#fff1f2;color:#dc2626;display:grid;place-items:center;border:1px solid #fecdd3}
+.logout-dialog-icon .ui-icon{width:20px;height:20px}
+.logout-dialog-copy h3{margin:1px 0 5px;font-size:16px;color:#172033}
+.logout-dialog-copy p{margin:0;color:#667085;font-size:11px;line-height:1.5}
+.logout-dialog-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:6px;padding-top:14px;border-top:1px solid #edf0f4}
+.logout-confirm{min-height:36px;padding:8px 13px;border:1px solid #dc2626;border-radius:6px;background:#dc2626;color:#fff;font-size:10.5px;font-weight:760;cursor:pointer}
+.logout-confirm:hover{background:#b91c1c;border-color:#b91c1c}
+.logout-confirm:disabled{opacity:.58;cursor:wait}
+
+body.sidebar-collapsed .sidebar-footer{gap:7px}
+body.sidebar-collapsed .cash-badge{font-size:0;height:34px;padding:0;display:grid;place-items:center}
+body.sidebar-collapsed .cash-badge:before{content:'$';font-size:12px;font-weight:850}
+body.sidebar-collapsed .session-card{display:flex!important;justify-content:center;padding:5px;border-color:transparent;background:transparent}
+body.sidebar-collapsed .session-avatar,body.sidebar-collapsed .session-copy{display:none}
+body.sidebar-collapsed .sidebar-logout{width:34px;height:34px;padding:0}
+body.sidebar-collapsed .logout-label{display:none}
+
+@media(max-width:760px){
+  .sidebar-footer{margin-top:12px}
+  .session-card{grid-template-columns:32px 1fr auto}
+  .logout-label{display:inline}
+  body.sidebar-collapsed .session-card{display:grid!important;grid-template-columns:32px 1fr auto;justify-content:stretch;padding:7px;border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.035)}
+  body.sidebar-collapsed .session-avatar,body.sidebar-collapsed .session-copy{display:flex}
+  body.sidebar-collapsed .session-avatar{display:grid}
+  body.sidebar-collapsed .sidebar-logout{width:auto;padding:0 9px}
+  body.sidebar-collapsed .logout-label{display:inline}
+}

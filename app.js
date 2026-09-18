@@ -109,16 +109,28 @@ function setAuthMessage(text = '', type = '') {
   el.className = 'auth-message' + (type ? ' ' + type : '');
 }
 
+function updateSessionIdentity(user = cloudUser) {
+  const card = document.getElementById('sessionCard');
+  const email = document.getElementById('sessionUserEmail');
+  if (email) email.textContent = user?.email || 'Usuario autenticado';
+  if (card && user) card.title = user?.email ? `Sesión: ${user.email}` : 'Sesión activa';
+}
+
 function showAuthOverlay() {
   document.getElementById('authOverlay')?.classList.remove('hidden');
   const logout = document.getElementById('logoutBtn');
+  const card = document.getElementById('sessionCard');
   if (logout) logout.style.display = 'none';
+  if (card) card.style.display = 'none';
 }
 
 function hideAuthOverlay() {
   document.getElementById('authOverlay')?.classList.add('hidden');
   const logout = document.getElementById('logoutBtn');
+  const card = document.getElementById('sessionCard');
   if (logout) logout.style.display = '';
+  if (card) card.style.display = '';
+  updateSessionIdentity();
 }
 
 
@@ -2368,17 +2380,29 @@ document.getElementById('signupBtn').onclick = async () => {
   }
 };
 
-document.getElementById('logoutBtn').onclick = async () => {
+async function performLogout() {
   if (!cloudClient) return;
+  const confirmBtn = document.getElementById('confirmLogoutBtn');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Cerrando…'; }
   await cloudSyncChain.catch(() => {});
   const { error } = await cloudClient.auth.signOut();
+  if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Cerrar sesión'; }
   if (error) return toast('No se pudo cerrar sesión');
+  document.getElementById('logoutDialog')?.close();
   cloudUser = null;
   cloudReady = false;
   workspaceOwnerId = null; cloudRole = 'owner';
   showAuthOverlay();
   setCloudStatus('offline', '☁ Inicia sesión');
+}
+
+document.getElementById('logoutBtn').onclick = () => {
+  const dialog = document.getElementById('logoutDialog');
+  if (dialog?.showModal) dialog.showModal();
+  else if (confirm('¿Deseas cerrar sesión?')) performLogout();
 };
+
+document.getElementById('confirmLogoutBtn').onclick = performLogout;
 
 initCloud();
 
