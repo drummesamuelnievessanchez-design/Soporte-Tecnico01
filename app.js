@@ -338,7 +338,12 @@ function openGroupForView(v) {
 }
 
 function showView(v) {
-  document.querySelectorAll('.nav-item').forEach(x => x.classList.toggle('active', x.dataset.view === v));
+  document.querySelectorAll('.nav-item').forEach(x => {
+    const active = x.dataset.view === v;
+    x.classList.toggle('active', active);
+    if (active) x.setAttribute('aria-current', 'page');
+    else x.removeAttribute('aria-current');
+  });
   openGroupForView(v);
   document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
   const target = document.getElementById('view-' + v);
@@ -382,7 +387,7 @@ document.querySelectorAll('.nav-group-toggle').forEach(btn => {
 });
 
 document.getElementById('todayLabel').textContent = new Date().toLocaleDateString('es-EC', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
-document.getElementById('quickOpenCash').onclick = () => { showView('caja'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+document.getElementById('quickOpenCash').onclick = () => { showView('caja'); window.scrollTo({ top: 0, behavior: 'auto' }); };
 
 function setSidebarCollapsed(collapsed) {
   document.body.classList.toggle('sidebar-collapsed', collapsed);

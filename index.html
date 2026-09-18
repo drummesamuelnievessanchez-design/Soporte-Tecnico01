@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#f3f6fb" />
+  <meta name="theme-color" content="#f7f8fa" />
   <title>Soporte360 · Gestión técnica</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="styles.css" />
@@ -97,18 +97,11 @@
       </nav>
 
       <div class="sidebar-footer">
-        <div id="cashBadge" class="cash-badge closed" title="Estado de caja">Caja cerrada</div>
-        <div id="sessionCard" class="session-card" style="display:none">
-          <div class="session-avatar" aria-hidden="true"><svg class="ui-icon"><use href="#i-user"></use></svg></div>
-          <div class="session-copy">
-            <span>Sesión activa</span>
-            <strong id="sessionUserEmail">Usuario</strong>
-          </div>
-          <button class="sidebar-logout" id="logoutBtn" type="button" title="Cerrar sesión" aria-label="Cerrar sesión" style="display:none">
-            <svg class="ui-icon" aria-hidden="true"><use href="#i-logout"></use></svg>
-            <span class="logout-label">Salir</span>
-          </button>
+        <div class="sidebar-mascot" aria-label="Mascota de TecnoSoluciones">
+          <div class="mascot-visual"><img src="assets/robot-dog.png" alt="Perro robótico de TecnoSoluciones" loading="lazy"></div>
+          <div class="mascot-message"><strong>Hola</strong><span>Todo listo para hoy.</span></div>
         </div>
+        <div id="cashBadge" class="cash-badge closed" title="Estado de caja">Caja cerrada</div>
       </div>
     </aside>
 
@@ -122,6 +115,10 @@
           <span id="cloudStatus" class="cloud-status offline"><svg class="ui-icon" aria-hidden="true"><use href="#i-cloud"></use></svg><span>Sin conexión</span></span>
           <span id="todayLabel"></span>
           <button class="btn ghost" id="quickOpenCash">Abrir caja</button>
+          <button class="top-logout" id="logoutBtn" type="button" title="Cerrar sesión" aria-label="Cerrar sesión" style="display:none">
+            <span class="logout-image" aria-hidden="true"><img src="assets/logout-icon.png" alt=""></span>
+            <span>Cerrar sesión</span>
+          </button>
         </div>
       </header>
 
@@ -631,7 +628,7 @@
 
   <dialog id="logoutDialog" class="logout-dialog">
     <form method="dialog" class="logout-dialog-card">
-      <div class="logout-dialog-icon"><svg class="ui-icon" aria-hidden="true"><use href="#i-logout"></use></svg></div>
+      <div class="logout-dialog-icon"><img src="assets/logout-icon.png" alt="" aria-hidden="true"></div>
       <div class="logout-dialog-copy">
         <h3>Cerrar sesión</h3>
         <p>¿Deseas salir de TecnoSoluciones en este dispositivo?</p>

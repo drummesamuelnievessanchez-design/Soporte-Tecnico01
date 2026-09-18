@@ -1071,3 +1071,278 @@ body.sidebar-collapsed .logout-label{display:none}
   body.sidebar-collapsed .sidebar-logout{width:auto;padding:0 9px}
   body.sidebar-collapsed .logout-label{display:inline}
 }
+
+/* =====================================================================
+   V16.2 · DISEÑO MINIMAL PROFESIONAL
+   Inspirado en patrones de Fluent 2, Carbon y Atlassian:
+   jerarquía clara, tipografía legible, navegación sobria y baja carga visual.
+   ===================================================================== */
+:root{
+  --sidebar-width:252px;
+  --content-max:1720px;
+  --app-bg:#f6f7f9;
+  --surface:#ffffff;
+  --surface-soft:#f9fafb;
+  --line:#e4e7ec;
+  --line-strong:#d0d5dd;
+  --ink:#172033;
+  --ink-soft:#475467;
+  --ink-muted:#667085;
+  --sidebar-professional:color-mix(in srgb,var(--secondary) 18%,#111827);
+  --sidebar-professional-2:color-mix(in srgb,var(--secondary) 10%,#0b1220);
+  --sidebar-accent:color-mix(in srgb,var(--primary) 78%,#ffffff);
+  --radius:10px;
+  --shadow:0 1px 2px rgba(16,24,40,.05);
+}
+
+html{background:var(--app-bg)}
+body{
+  background:var(--app-bg)!important;
+  color:var(--ink);
+  font-family:"Segoe UI",Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,Roboto,Arial,sans-serif;
+  font-size:15px;
+  line-height:1.5;
+  letter-spacing:0;
+}
+
+/* Navegación lateral: sobria, legible y sin efectos decorativos innecesarios. */
+.sidebar{
+  width:var(--sidebar-width);
+  padding:16px 14px 14px;
+  background:linear-gradient(180deg,var(--sidebar-professional) 0%,var(--sidebar-professional-2) 100%)!important;
+  border-right:1px solid rgba(255,255,255,.07);
+  box-shadow:2px 0 8px rgba(16,24,40,.05);
+}
+.main{margin-left:var(--sidebar-width);width:calc(100% - var(--sidebar-width));padding:0 24px 32px}
+
+.sidebar .brand{
+  min-height:66px;
+  padding:2px 3px 15px;
+  margin-bottom:7px;
+  gap:10px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.brand-logo{width:44px;height:44px;min-width:44px;border-radius:9px;box-shadow:none;border:1px solid rgba(255,255,255,.20)}
+.brand h1{font-size:15px;font-weight:700;max-width:137px;letter-spacing:-.01em}
+.brand small{font-size:11px;line-height:1.35;color:rgba(255,255,255,.64)}
+.sidebar-toggle{width:31px!important;height:31px!important;min-width:31px!important;border-radius:7px!important;font-size:20px;background:rgba(255,255,255,.055)!important}
+
+.sidebar nav{gap:4px;padding-top:4px}
+.nav-pinned{padding-bottom:9px;margin-bottom:5px;border-bottom:1px solid rgba(255,255,255,.07)}
+.nav-item{
+  min-height:42px;
+  padding:9px 11px;
+  border-radius:8px!important;
+  font-size:14px;
+  font-weight:600;
+  gap:10px;
+  color:rgba(255,255,255,.80);
+}
+.nav-item:hover{background:rgba(255,255,255,.055);color:#fff}
+.nav-item.active{
+  background:rgba(255,255,255,.10)!important;
+  box-shadow:inset 3px 0 0 var(--sidebar-accent)!important;
+  color:#fff;
+}
+.nav-icon{width:25px;height:25px;min-width:25px;color:rgba(255,255,255,.68);display:grid;place-items:center}
+.nav-icon .ui-icon{width:18px;height:18px;stroke-width:1.75}
+.nav-item.active .nav-icon{color:#fff}
+
+.nav-group{border-radius:8px}
+.nav-group-toggle{
+  min-height:35px;
+  padding:7px 10px;
+  border-radius:7px;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.02em;
+  text-transform:none;
+  color:rgba(255,255,255,.53);
+  gap:8px;
+}
+.nav-group-toggle:hover,.nav-group:has(.nav-item.active)>.nav-group-toggle{background:rgba(255,255,255,.025);color:rgba(255,255,255,.80)}
+.nav-group-icon{width:20px;min-width:20px}.nav-group-icon .ui-icon{width:15px;height:15px}
+.nav-group-chevron{font-size:15px;color:rgba(255,255,255,.46)}
+.nav-group.open .nav-group-items{gap:2px;padding:2px 0 7px}
+.nav-group .nav-item{margin-left:7px;width:calc(100% - 7px);padding:8px 10px;font-size:13.5px;min-height:39px}
+
+/* Mascota discreta: identidad visual sin convertirla en elemento dominante. */
+.sidebar-footer{margin-top:auto;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:10px}
+.sidebar-mascot{
+  display:grid;
+  grid-template-columns:54px minmax(0,1fr);
+  align-items:center;
+  gap:10px;
+  min-height:70px;
+  padding:8px;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:10px;
+  background:rgba(255,255,255,.045);
+}
+.mascot-visual{width:54px;height:54px;border-radius:9px;overflow:hidden;background:#d7fff5;border:1px solid rgba(255,255,255,.15)}
+.mascot-visual img{width:100%;height:100%;object-fit:cover;object-position:center 38%;display:block}
+.mascot-message{min-width:0;display:flex;flex-direction:column;gap:1px}
+.mascot-message strong{font-size:12px;color:#fff;font-weight:700}
+.mascot-message span{font-size:10.5px;line-height:1.35;color:rgba(255,255,255,.62)}
+.cash-badge{min-height:36px;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:700;box-shadow:none}
+
+/* Cabecera: más clara, con salida visible y profesional. */
+.topbar{
+  position:sticky;top:0;z-index:18;
+  min-height:80px;
+  margin-bottom:18px;
+  padding:18px 0 14px;
+  background:var(--app-bg)!important;
+  border-bottom:1px solid var(--line);
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+.topbar h2{font-size:26px;font-weight:700;letter-spacing:-.025em;color:#101828}
+.topbar p{font-size:13px;margin-top:3px;color:var(--ink-muted)}
+.top-actions{gap:9px;font-size:12px;color:var(--ink-muted)}
+#todayLabel{font-size:12px;color:var(--ink-muted);padding:0 3px}
+.cloud-status{min-height:34px;padding:6px 9px!important;border-radius:7px!important;font-size:11px!important;font-weight:650!important;box-shadow:none!important}
+.cloud-status .ui-icon{width:15px;height:15px}
+.top-actions .btn{min-height:36px;padding:7px 12px;border-radius:7px;font-size:12px;font-weight:650}
+.top-logout{
+  min-height:36px;
+  padding:6px 10px 6px 7px;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  border:1px solid #f1c4c8;
+  border-radius:7px;
+  background:#fff;
+  color:#b42318;
+  font:inherit;
+  font-size:12px;
+  font-weight:650;
+  cursor:pointer;
+  transition:background .1s,border-color .1s;
+}
+.top-logout:hover{background:#fff6f6;border-color:#e9a8ad}
+.logout-image{width:22px;height:20px;display:grid;place-items:center;overflow:hidden;border-radius:4px;background:#d7fff8}
+.logout-image img{width:27px;height:22px;object-fit:cover;object-position:center top;display:block}
+
+/* Dashboard: sin círculos decorativos ni señales visuales típicas de plantillas generativas. */
+.stats-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.stat-card{
+  min-height:112px;
+  padding:16px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  box-shadow:var(--shadow);
+  background:var(--surface);
+  display:flex;
+  align-items:center;
+  gap:13px;
+  position:relative;
+  overflow:hidden;
+}
+.stat-card::before,.stat-card::after{display:none!important;content:none!important}
+.stat-card:hover{transform:none!important;box-shadow:0 2px 5px rgba(16,24,40,.06)!important;border-color:#d6dae1!important}
+.stat-icon{width:40px;height:40px;min-width:40px;border-radius:8px;background:var(--surface-soft);border:1px solid var(--line);color:var(--stat-tone,var(--primary))}
+.stat-icon .ui-icon{width:20px;height:20px;stroke-width:1.7}
+.stat-card span{font-size:12px;font-weight:600;color:var(--ink-soft)}
+.stat-card strong{font-size:27px;font-weight:700;margin:4px 0 1px;line-height:1.08;letter-spacing:-.025em;color:#101828}
+.stat-card small{font-size:11px;color:#8a94a6;line-height:1.3}
+
+/* Paneles y formularios: jerarquía por espacio, no por adornos. */
+.panel,.mini-stat,.repair-module-top{border:1px solid var(--line)!important;border-radius:10px!important;box-shadow:var(--shadow)!important;background:#fff!important}
+.panel{padding:17px;margin-bottom:14px}
+.panel-head{min-height:44px;margin:-17px -17px 15px;padding:11px 15px;border-bottom:1px solid var(--line);background:#fbfcfd;border-radius:10px 10px 0 0}
+.panel-head h3{font-size:15px;font-weight:700;color:#172033;letter-spacing:0}
+.panel-head p{font-size:11.5px;margin:2px 0 0;color:#7a8699}
+.panel h4{font-size:14px}
+.grid-2{gap:14px}
+
+.form-grid{gap:12px 13px}
+.form-grid label,label{gap:6px;font-size:13px;font-weight:600;color:#475467}
+input,select,textarea{
+  min-height:42px;
+  padding:9px 11px;
+  border:1px solid var(--line-strong);
+  border-radius:7px;
+  background:#fff;
+  color:#172033;
+  font-size:14px;
+  box-shadow:none;
+}
+textarea{min-height:88px}
+input::placeholder,textarea::placeholder{color:#98a2b3}
+input:focus,select:focus,textarea:focus{border-color:color-mix(in srgb,var(--primary) 58%,#98a2b3);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 10%,transparent)}
+.info-note,.payment-hint,.product-preview{font-size:12px!important;border-radius:7px!important;background:#f8fafc!important;border-color:var(--line)!important}
+
+.btn{min-height:39px;padding:8px 13px;border-radius:7px;font-size:12.5px;font-weight:650;box-shadow:none!important;transition:background .1s,border-color .1s,color .1s!important}
+.btn:hover{transform:none!important;filter:none!important}
+.btn.primary:hover{background:color-mix(in srgb,var(--primary) 90%,#000)}
+.mini{min-height:31px;padding:5px 9px;border-radius:6px;font-size:11px;font-weight:650}
+.action-row{gap:5px}
+
+/* Tablas: densidad de software administrativo, pero con mayor legibilidad. */
+.table-wrap{border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:none}
+table{font-size:13px}
+th,td{padding:10px 10px;border-bottom:1px solid #edf0f3;line-height:1.4}
+th{background:#f7f8fa;color:#667085;font-size:11px;font-weight:700;letter-spacing:.01em;text-transform:none}
+tbody tr:nth-child(even){background:#fcfcfd}
+tbody tr:hover{background:#f8fafc}
+.status{min-height:24px;padding:4px 8px;border-radius:6px;font-size:10.5px;font-weight:700}
+
+.cash-box{padding:14px;border-radius:8px;background:#f8fafc;border:1px solid var(--line)}
+.cash-box strong{font-size:26px;margin:6px 0}
+.list-item{padding:10px 0}
+.dashboard-alert-item{padding:10px 11px;border-radius:7px;background:#fbfcfd}
+.dashboard-alert-item strong{font-size:12.5px}.dashboard-alert-item span{font-size:11px}
+.cart{border-radius:8px}.cart-item{padding:10px}
+.client-suggestion strong,.product-suggestion strong{font-size:12.5px!important}.client-suggestion span,.product-suggestion span{font-size:11px!important}
+
+/* Cierre de sesión: conserva el icono entregado por el usuario. */
+.logout-dialog{border-radius:10px;box-shadow:0 22px 50px rgba(16,24,40,.18)}
+.logout-dialog::backdrop{background:rgba(16,24,40,.42);backdrop-filter:none}
+.logout-dialog-card{padding:22px;grid-template-columns:48px 1fr;gap:14px}
+.logout-dialog-icon{width:48px;height:48px;border-radius:8px;background:#d7fff8;border:1px solid #bee9df;overflow:hidden;padding:0}
+.logout-dialog-icon img{width:60px;height:49px;object-fit:cover;object-position:center top;display:block}
+.logout-dialog-copy h3{font-size:17px}.logout-dialog-copy p{font-size:12.5px}
+.logout-confirm{min-height:38px;padding:8px 14px;border-radius:7px;font-size:12px}
+
+/* Eliminar costos de pintura innecesarios en toda la app. */
+.modal-backdrop,.modal{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.nav-item,.btn,.mini,input,select,textarea,tbody tr,.top-logout{transition-duration:.1s!important}
+
+body.sidebar-collapsed .sidebar{width:68px;padding-left:9px;padding-right:9px}
+body.sidebar-collapsed .main{margin-left:68px;width:calc(100% - 68px)}
+body.sidebar-collapsed .brand-logo{width:42px;height:42px;min-width:42px}
+body.sidebar-collapsed .sidebar-mascot{display:none}
+body.sidebar-collapsed .cash-badge{height:36px}
+
+@media(max-width:1200px){
+  :root{--sidebar-width:224px}
+  .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .nav-item{font-size:13.5px}
+  .nav-group .nav-item{font-size:13px}
+}
+@media(max-width:900px){
+  .topbar{position:relative;background:transparent!important;border-bottom:0}
+  .top-actions{flex-wrap:wrap;justify-content:flex-end}
+}
+@media(max-width:760px){
+  .sidebar{width:100%;position:static}
+  .main{margin-left:0;width:100%;padding:0 13px 72px}
+  .sidebar-mascot{grid-template-columns:48px 1fr}.mascot-visual{width:48px;height:48px}
+  .topbar{padding:13px 0 10px;display:flex;gap:12px}
+  .topbar h2{font-size:23px}.topbar p{font-size:12px}
+  .top-actions{width:100%;justify-content:flex-start}
+  .stats-grid{grid-template-columns:1fr 1fr;gap:9px}
+  .stat-card{min-height:96px;padding:12px}.stat-card strong{font-size:23px}
+  .panel{padding:13px}.panel-head{margin:-13px -13px 13px;padding:10px 12px}
+  .form-grid{grid-template-columns:1fr}
+}
+@media(max-width:500px){
+  .stats-grid{grid-template-columns:1fr}
+  .top-actions{align-items:stretch}.top-actions>*{flex:1 1 auto}
+  .top-logout{justify-content:center}
+}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+.sidebar{overflow-y:auto;overflow-x:hidden}
+.sidebar::-webkit-scrollbar{width:5px}.sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13);border-radius:999px}.sidebar::-webkit-scrollbar-track{background:transparent}
+html{scroll-behavior:auto}
