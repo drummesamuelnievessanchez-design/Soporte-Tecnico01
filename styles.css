@@ -918,3 +918,10 @@ body.sidebar-collapsed .nav-icon .ui-icon{width:17px;height:17px}
 @media(max-width:480px){
   .stats-grid{grid-template-columns:1fr}
 }
+
+/* V17 · envío de facturas PDF por correo */
+.email-modal-card{width:min(620px,calc(100vw - 34px));padding:26px}
+.email-modal-card .info-note code{font-weight:800;color:var(--text,#0f172a)}
+#invoiceEmailMessage:empty{display:none}
+#invoiceEmailSendBtn:disabled{opacity:.68;cursor:wait}
+@media(max-width:760px){.email-modal-card{padding:20px}}

@@ -1,4 +1,4 @@
-// Soporte360 V16 · interfaz profesional + optimización de renderizado y sincronización
+// Soporte360 V17 · interfaz profesional + optimización de renderizado y sincronización
 const DB_KEY = 'soporte360_db_v1';
 
 const today = () => {
@@ -1908,7 +1908,7 @@ function renderInvoices() {
       <td>${money(paid)}</td>
       <td><strong>${money(balance)}</strong></td>
       <td><span class="status ${status === 'Pagado' ? 'good' : 'warn'}">${status}</span></td>
-      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Enviar factura</button>${balance > 0.004 ? `<button class="mini good-mini" onclick="openReceivablePayment('${s.id}')">Abonar</button>` : ''}${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button>` : ''}</div></td>
+      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Enviar PDF</button>${balance > 0.004 ? `<button class="mini good-mini" onclick="openReceivablePayment('${s.id}')">Abonar</button>` : ''}${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button>` : ''}</div></td>
     </tr>`;
   }).join('') || '<tr><td colspan="11" class="empty">No hay facturas.</td></tr>';
 }
@@ -1950,17 +1950,252 @@ function invoiceEmailText(s) {
   return `Hola ${s.clientName || ''},\n\nAdjuntamos el detalle de su comprobante ${s.number}.\n\n${lines}\n\nSubtotal sin IVA: ${money(s.subtotal)}\nIVA incluido (${s.taxRate || 0}%): ${money(s.tax)}\nTOTAL: ${money(s.total)}\nABONADO: ${money(salePaidAmount(s))}\nSALDO: ${money(saleBalanceAmount(s))}\nESTADO: ${salePaymentStatus(s)}\n\nGracias por confiar en ${db.company.name || 'nuestro servicio'}.`;
 }
 
+let pendingInvoiceEmailId = '';
+let html2pdfLoadPromise = null;
+const HTML2PDF_CDN = 'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js';
+
+function ensureHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+  if (html2pdfLoadPromise) return html2pdfLoadPromise;
+  html2pdfLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = HTML2PDF_CDN;
+    script.async = true;
+    script.onload = () => window.html2pdf ? resolve(window.html2pdf) : reject(new Error('No se pudo inicializar el generador PDF.'));
+    script.onerror = () => reject(new Error('No se pudo cargar el generador PDF. Revisa la conexión a internet.'));
+    document.head.appendChild(script);
+  }).catch(err => { html2pdfLoadPromise = null; throw err; });
+  return html2pdfLoadPromise;
+}
+
+function buildInvoiceA4Document(s) {
+  if (!s) return null;
+  const d = s.deviceId ? db.devices.find(x => x.id === s.deviceId) : null;
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  const companyName = db.company.name || 'Soporte360';
+  const logo = db.company.logo ? `<img src="${db.company.logo}" class="pro-logo" alt="Logo">` : `<div class="pro-logo-placeholder">${esc(companyName.charAt(0).toUpperCase())}</div>`;
+  const paidAmount = salePaidAmount(s);
+  const balanceAmount = saleBalanceAmount(s);
+  const paymentStatus = salePaymentStatus(s);
+  const itemRows = (s.items || []).map((i, idx) => {
+    const code = i.type === 'service' ? 'SERV' : (i.code || '-');
+    return `<tr><td class="num">${idx + 1}</td><td class="code">${esc(code)}</td><td><div class="desc-main">${esc(i.name)}</div><div class="desc-type">${i.type === 'service' ? 'Servicio / mano de obra' : 'Producto / repuesto'}</div></td><td class="qty">${Number(i.qty)}</td><td class="money-cell">${money(i.price)}</td><td class="money-cell total-cell">${money(Number(i.price) * Number(i.qty))}</td></tr>`;
+  }).join('');
+  const repairBlock = s.source === 'repair' && d ? `
+    <section class="repair-strip">
+      <div><span>Orden de trabajo</span><strong>${esc(s.order || d.order)}</strong></div>
+      <div><span>Equipo</span><strong>${esc(deviceTypeLabel(d))} · ${esc(d.brand)} ${esc(d.model)}</strong></div>
+      <div><span>N.º de serie</span><strong>${esc(d.serial || '-')}</strong></div>
+      <div><span>Estado</span><strong>REPARADO</strong></div>
+      <div><span>Garantía</span><strong>${esc(warrantyLabel(d))}</strong></div>
+    </section>` : '';
+
+  const body = `
+    <div class="invoice-sheet pro-sheet">
+      <div class="pro-accent-line"></div>
+      <header class="pro-header">
+        <div class="pro-company-block">
+          ${logo}
+          <div class="pro-company-copy">
+            <h1>${esc(companyName)}</h1>
+            ${db.company.legal ? `<div class="legal-name">${esc(db.company.legal)}</div>` : ''}
+            <div class="company-contact">${esc(db.company.address || '')}</div>
+            <div class="company-contact">Tel: ${esc(db.company.phone || '-')} ${db.company.email ? ` · ${esc(db.company.email)}` : ''}</div>
+          </div>
+        </div>
+        <div class="pro-doc-box">
+          <div class="doc-ruc">RUC ${esc(db.company.ruc || '-')}</div>
+          <div class="doc-title">FACTURA</div>
+          <div class="doc-number">${esc(s.number)}</div>
+          <div class="doc-kind">${s.source === 'repair' ? 'SERVICIO TÉCNICO' : 'VENTA DE PRODUCTOS'}</div>
+          <div class="doc-note">DOCUMENTO INTERNO</div>
+        </div>
+      </header>
+      <section class="pro-info-grid">
+        <div class="pro-info-box client-info">
+          <div class="box-title">DATOS DEL CLIENTE</div>
+          <div class="info-row"><span>CI / RUC</span><strong>${esc(s.clientCedula || '-')}</strong></div>
+          <div class="info-row"><span>Cliente</span><strong>${esc(s.clientName || '-')}</strong></div>
+          <div class="info-row"><span>Dirección</span><strong>${esc(c.address || '-')}</strong></div>
+          <div class="info-row"><span>Teléfono</span><strong>${esc(s.clientPhone || c.phone || '-')}</strong></div>
+          <div class="info-row"><span>Correo</span><strong>${esc(s.clientEmail || c.email || '-')}</strong></div>
+        </div>
+        <div class="pro-info-box issue-info">
+          <div class="box-title">DATOS DEL COMPROBANTE</div>
+          <div class="info-row"><span>Fecha emisión</span><strong>${esc(s.date || '')}</strong></div>
+          <div class="info-row"><span>Forma de pago</span><strong>${esc(salePaymentLabel(s))}</strong></div>
+          <div class="info-row"><span>Tipo</span><strong>${s.source === 'repair' ? 'Reparación' : 'Venta'}</strong></div>
+          <div class="info-row"><span>N.º control</span><strong>${esc(s.order || s.number)}</strong></div>
+          <div class="info-row"><span>Estado de pago</span><strong>${esc(paymentStatus)}</strong></div>
+        </div>
+      </section>
+      ${repairBlock}
+      <table class="pro-items-table">
+        <thead><tr><th class="num">#</th><th class="code">CÓD.</th><th>DESCRIPCIÓN</th><th class="qty">CANT.</th><th class="money-cell">PRECIO U.</th><th class="money-cell">IMPORTE</th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      <section class="pro-bottom">
+        <div class="pro-observations">
+          <div class="box-title">OBSERVACIONES</div>
+          <p>${s.source === 'repair' && d ? `Servicio correspondiente a la orden ${esc(s.order || d.order)}. Equipo: ${esc(deviceTypeLabel(d))} ${esc(d.brand)} ${esc(d.model)}.${d.warrantyNotes ? ` Garantía: ${esc(d.warrantyNotes)}` : ''}` : 'Venta de productos registrada en el sistema.'}</p>
+          ${s.source === 'repair' && db.company.serviceClause ? `<div class="invoice-terms"><strong>Condiciones de servicio:</strong><br>${esc(db.company.serviceClause).replace(/\n/g, '<br>')}</div>` : ''}
+          <div class="thanks-message"><strong>Gracias por confiar en ${esc(companyName)}.</strong><br>Conserve este comprobante para futuras consultas.</div>
+        </div>
+        <div class="pro-totals">
+          <div><span>SUBTOTAL</span><strong>${money(s.subtotal)}</strong></div>
+          <div><span>IVA ${Number(s.taxRate || 0)}%</span><strong>${money(s.tax)}</strong></div>
+          <div class="pro-total-final"><span>VALOR TOTAL</span><strong>${money(s.total)}</strong></div>
+          <div><span>ABONADO</span><strong>${money(paidAmount)}</strong></div>
+          <div class="${balanceAmount > 0.004 ? 'payment-due-row' : ''}"><span>SALDO</span><strong>${money(balanceAmount)}</strong></div>
+        </div>
+      </section>
+      <section class="pro-signatures">
+        <div><span></span><small>Recibí conforme / Cliente</small></div>
+        <div><span></span><small>Responsable / Técnico</small></div>
+      </section>
+      <footer class="pro-footer">
+        <div>${esc(companyName)} · Soporte técnico, reparación y ventas</div>
+        <div>${esc(db.company.phone || '')}</div>
+      </footer>
+    </div>`;
+  return { title: s.number, body, kind: 'invoice' };
+}
+
+function invoicePdfStyles() {
+  const primary = db.company.primary || '#2563eb';
+  const secondary = db.company.secondary || '#0f172a';
+  return `
+    :root{--accent:${primary};--accent2:${secondary};--ink:#1a2230;--muted:#667085;--line:#d7dee7;--soft:#f7f9fc;--ok:#0f766e}
+    *{box-sizing:border-box} body{margin:0;background:#fff;color:var(--ink);font-family:Arial,Helvetica,sans-serif}
+    .invoice-sheet{width:178mm;margin:0 auto;background:#fff;overflow:hidden;min-height:0!important;height:auto!important}
+    .pro-sheet{padding:0 6mm 5mm}.pro-accent-line{height:7px;background:linear-gradient(90deg,var(--accent),#45b7d1,var(--accent2));margin:0 -6mm 4mm}
+    .pro-header{display:grid;grid-template-columns:minmax(0,1fr) 56mm;gap:5mm;align-items:start}.pro-company-block{display:flex;align-items:flex-start;gap:3.5mm;min-width:0}
+    .pro-logo{width:34mm;height:17mm;object-fit:contain;object-position:left center}.pro-logo-placeholder{width:18mm;height:18mm;border:2px solid var(--accent);display:grid;place-items:center;color:var(--accent);font-size:9mm;font-weight:900;border-radius:4mm;background:#fff}
+    .pro-company-copy h1{font-size:20px;line-height:1.02;margin:0 0 1mm;color:var(--accent2)}.legal-name{font-size:8.8px;font-weight:800;margin-bottom:1mm;color:#394150}.company-contact{font-size:8px;color:#4f5967;line-height:1.32}
+    .pro-doc-box{border:1.5px solid var(--accent2);border-radius:7px;padding:2.5mm 2.6mm;text-align:center;background:linear-gradient(180deg,#fff,#f5f8ff)}.doc-ruc{font-size:9.5px;font-weight:800;color:var(--accent2)}.doc-title{font-size:17px;font-weight:900;letter-spacing:.04em;margin:1mm 0 .1mm;color:var(--accent2)}.doc-number{font-size:13px;font-weight:900;color:var(--accent);padding:1mm 0;border-top:1px solid #d6dbe2;border-bottom:1px solid #d6dbe2}.doc-kind{font-size:7.4px;font-weight:900;margin-top:1mm;color:var(--ok)}.doc-note{font-size:6.6px;color:#7b8491;margin-top:.5mm;letter-spacing:.04em}
+    .pro-info-grid{display:grid;grid-template-columns:1.33fr .87fr;gap:2.3mm;margin-top:3mm}.pro-info-box{border:1px solid #cfd7e2;border-radius:7px;overflow:hidden;background:#fff}.box-title{font-size:7px;font-weight:900;letter-spacing:.08em;padding:1.6mm 2.4mm;color:#fff;background:linear-gradient(90deg,var(--accent2),#344054)}.issue-info .box-title{background:linear-gradient(90deg,var(--accent),#4f8cff)}.pro-info-box .info-row{padding:1.1mm 2.4mm}.info-row{display:grid;grid-template-columns:20mm 1fr;gap:1.5mm;font-size:7.8px;line-height:1.25}.info-row span{font-weight:800;color:#667085}.info-row strong{font-weight:700;color:#1f2937;overflow-wrap:anywhere}
+    .repair-strip{display:grid;grid-template-columns:.72fr 1.18fr .82fr .55fr 1fr;gap:0;border:1px solid #d3dbe5;border-radius:7px;overflow:hidden;margin-top:2.4mm;background:#fbfdff}.repair-strip>div{padding:1.9mm 2.1mm;border-right:1px solid #e2e8f0}.repair-strip>div:last-child{border-right:0}.repair-strip>div:nth-child(4){background:#ecfdf5}.repair-strip span{display:block;font-size:6.2px;color:#6d7785;text-transform:uppercase;font-weight:900;margin-bottom:.4mm}.repair-strip strong{font-size:7.4px;line-height:1.15}
+    .pro-items-table{width:100%;border-collapse:collapse;margin-top:2.6mm;table-layout:fixed;border:1px solid #dde4ee}.pro-items-table thead tr{background:linear-gradient(180deg,#f2f6fc,#e8eff9)}.pro-items-table th{padding:1.6mm 1.2mm;font-size:6.9px;text-align:left;letter-spacing:.03em;color:var(--accent2);border-bottom:1px solid #d7dee7}.pro-items-table td{border-bottom:1px solid #edf1f5;padding:1.8mm 1.2mm;font-size:7.8px;vertical-align:top}.pro-items-table tbody tr:last-child td{border-bottom:0}.pro-items-table .num{width:7mm;text-align:center}.pro-items-table .code{width:14mm}.pro-items-table .qty{width:10mm;text-align:center}.pro-items-table .money-cell{width:18mm;text-align:right}.pro-items-table .total-cell{font-weight:800}.desc-main{font-weight:700;line-height:1.15}.desc-type{font-size:6.2px;color:#7a8490;margin-top:.4mm}
+    .pro-bottom{display:grid;grid-template-columns:1fr 47mm;gap:3mm;margin-top:2.8mm;align-items:start}.pro-observations{border:1px solid #d8e0ea;border-radius:7px;overflow:hidden;background:#fff}.pro-observations p{font-size:7.6px;color:#515b68;line-height:1.28;margin:0;padding:1.8mm 2.4mm .5mm}.invoice-terms{margin:1mm 2.4mm;padding:1.4mm 1.6mm;border:1px solid #e1e6ed;border-radius:5px;background:#fafbfc;font-size:6.8px;line-height:1.3;color:#596273}.thanks-message{margin:0 2.4mm 1.8mm;padding-top:1.4mm;border-top:1px solid #e5eaf0;font-size:7.2px;line-height:1.22;color:#475467}
+    .pro-totals{border:1px solid #ced7e2;border-radius:7px;overflow:hidden;background:#fff}.pro-totals>div{display:flex;justify-content:space-between;gap:4mm;padding:1.8mm 2mm;border-bottom:1px solid #eef2f6;font-size:7.9px}.pro-totals>div:last-child{border-bottom:0}.pro-totals span{font-weight:800;color:#525d6a}.pro-total-final{background:linear-gradient(90deg,var(--accent),#2563eb)!important;color:#fff!important;padding:2.4mm 2mm!important;font-size:9px!important}.pro-total-final span,.pro-total-final strong{color:#fff!important}.pro-total-final strong{font-size:12.5px}.payment-due-row{background:#fff7ed}
+    .pro-signatures{display:grid;grid-template-columns:1fr 1fr;gap:14mm;margin-top:4mm;padding:0 8mm}.pro-signatures div{text-align:center}.pro-signatures span{display:block;border-top:1px solid #9aa4b2}.pro-signatures small{display:block;font-size:6.6px;color:#697386;margin-top:1mm}.pro-footer{margin-top:2.4mm;border-top:1px solid #e5eaf0;padding-top:1.2mm;display:flex;justify-content:space-between;font-size:6.5px;color:#76808d}`;
+}
+
+async function generateInvoicePdfBase64(s) {
+  const doc = buildInvoiceA4Document(s);
+  if (!doc) throw new Error('No se pudo preparar la factura.');
+  await ensureHtml2Pdf();
+  const style = document.createElement('style');
+  style.textContent = invoicePdfStyles();
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  host.style.cssText = 'position:absolute;left:-12000px;top:0;width:210mm;background:#fff;z-index:-1;pointer-events:none;';
+  host.innerHTML = doc.body;
+  document.head.appendChild(style);
+  document.body.appendChild(host);
+  try {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const worker = window.html2pdf().set({
+      margin: [6, 6, 6, 6],
+      filename: `${s.number}.pdf`,
+      image: { type: 'jpeg', quality: 0.96 },
+      html2canvas: { scale: 1.6, useCORS: true, logging: false, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
+      pagebreak: { mode: ['css', 'legacy'] }
+    }).from(host.querySelector('.invoice-sheet'));
+    const dataUri = await worker.outputPdf('datauristring');
+    const base64 = String(dataUri || '').split(',')[1] || '';
+    if (!base64) throw new Error('No se pudo convertir la factura a PDF.');
+    return base64;
+  } finally {
+    host.remove();
+    style.remove();
+  }
+}
+
+function invoiceEmailHtml(s) {
+  const text = invoiceEmailText(s).split('\n').map(line => esc(line)).join('<br>');
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.55"><p>${text}</p><p style="color:#64748b;font-size:12px">Se adjunta el comprobante ${esc(s.number)} en formato PDF.</p></div>`;
+}
+
+function closeInvoiceEmailModal() {
+  const modal = document.getElementById('invoiceEmailModal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  pendingInvoiceEmailId = '';
+  const msg = document.getElementById('invoiceEmailMessage');
+  if (msg) { msg.textContent = ''; msg.className = 'auth-message'; }
+}
+
+document.querySelectorAll('[data-close-invoice-email]').forEach(el => el.onclick = closeInvoiceEmailModal);
+
 window.sendInvoiceEmail = id => {
   const s = db.sales.find(x => x.id === id);
   if (!s) return;
   const toEmail = getClientEmail(s.clientId, s.clientEmail);
-  if (!toEmail) return toast('El cliente no tiene correo registrado');
-  const subject = encodeURIComponent(`${db.company.name || 'Soporte360'} - Factura ${s.number}`);
-  const body = encodeURIComponent(invoiceEmailText(s));
-  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail)}&su=${subject}&body=${body}`;
-  const win = window.open(gmailUrl, '_blank');
-  if (!win) window.location.href = `mailto:${encodeURIComponent(toEmail)}?subject=${subject}&body=${body}`;
-  toast('Factura preparada para enviar a ' + toEmail);
+  pendingInvoiceEmailId = id;
+  document.getElementById('invoiceEmailTitle').textContent = `Enviar ${s.number}`;
+  document.getElementById('invoiceEmailSummary').textContent = `${s.clientName || 'Cliente'} · Total ${money(s.total)}`;
+  document.getElementById('invoiceEmailTo').value = toEmail || '';
+  document.getElementById('invoiceEmailSubject').value = `${db.company.name || 'Soporte360'} - Factura ${s.number}`;
+  const modal = document.getElementById('invoiceEmailModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  setTimeout(() => document.getElementById('invoiceEmailTo')?.focus(), 50);
+};
+
+document.getElementById('invoiceEmailForm').onsubmit = async e => {
+  e.preventDefault();
+  const sale = db.sales.find(x => x.id === pendingInvoiceEmailId);
+  if (!sale) return toast('No se encontró la factura');
+  if (!cloudClient || !cloudUser) return toast('Debes iniciar sesión en Supabase para enviar correos');
+  const to = document.getElementById('invoiceEmailTo').value.trim();
+  const subject = document.getElementById('invoiceEmailSubject').value.trim();
+  const button = document.getElementById('invoiceEmailSendBtn');
+  const msg = document.getElementById('invoiceEmailMessage');
+  if (!/^\S+@\S+\.\S+$/.test(to)) {
+    msg.textContent = 'Escribe un correo válido.'; msg.className = 'auth-message error'; return;
+  }
+  button.disabled = true;
+  button.textContent = 'Generando PDF…';
+  msg.textContent = 'Preparando la factura y el archivo PDF…';
+  msg.className = 'auth-message';
+  try {
+    const pdfBase64 = await generateInvoicePdfBase64(sale);
+    button.textContent = 'Enviando…';
+    msg.textContent = 'Enviando el PDF al correo del cliente…';
+    const { data, error } = await cloudClient.functions.invoke('send-invoice', {
+      body: {
+        to,
+        subject: subject || `${db.company.name || 'Soporte360'} - Factura ${sale.number}`,
+        html: invoiceEmailHtml(sale),
+        pdfBase64,
+        fileName: `${sale.number}.pdf`,
+        replyTo: db.company.email || ''
+      }
+    });
+    if (error) {
+      let detail = error.message || 'No se pudo ejecutar el servicio de correo.';
+      try {
+        const payload = await error.context?.json?.();
+        if (payload?.error) detail = payload.error;
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    if (!data?.ok) throw new Error(data?.error || 'El servicio de correo no confirmó el envío.');
+    msg.textContent = `Factura enviada correctamente a ${to}.`;
+    msg.className = 'auth-message success';
+    toast('Factura PDF enviada correctamente');
+    setTimeout(closeInvoiceEmailModal, 1100);
+  } catch (err) {
+    console.error('Error enviando factura PDF:', err);
+    msg.textContent = err.message || 'No se pudo enviar la factura. Revisa la configuración del correo.';
+    msg.className = 'auth-message error';
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Enviar PDF por correo';
+  }
 };
 
 window.printInvoice = (id, format = 'a4') => {
@@ -2286,7 +2521,7 @@ function closeLogoModal() {
 document.getElementById('brandLogo').onclick = openLogoModal;
 document.getElementById('companyLogoPreview').onclick = openLogoModal;
 document.querySelectorAll('[data-close-logo]').forEach(el => el.onclick = closeLogoModal);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLogoModal(); closeClientHistoryModal(); closeReceivablePaymentModal(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLogoModal(); closeClientHistoryModal(); closeReceivablePaymentModal(); closeInvoiceEmailModal(); } });
 
 
 function renderMachineInventory() {

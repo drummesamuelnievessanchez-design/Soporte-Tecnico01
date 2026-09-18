@@ -507,7 +507,7 @@
               <label>Color principal<input id="primaryColor" type="color" value="#2563eb"></label>
               <label>Color secundario<input id="secondaryColor" type="color" value="#0f172a"></label>
               <button class="btn secondary full" id="applyColorsBtn">Aplicar colores</button>
-              <div class="full info-note"><strong>Correo de facturas:</strong> registra el correo de cada cliente. En Facturas tendrás el botón “Enviar factura”, que prepara el correo automáticamente con todos los datos del comprobante.</div>
+              <div class="full info-note"><strong>Correo de facturas:</strong> registra el correo de cada cliente. En Facturas, el botón “Enviar PDF” genera la factura A4 y la envía como archivo adjunto mediante la función segura de Supabase.</div>
               <button class="btn danger full" id="resetDataBtn">Restablecer datos de prueba</button>
             </div>
           </article>
@@ -531,6 +531,25 @@
         <label>Forma de pago<select id="receivablePaymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Mixto</option></select></label>
         <div class="full payment-balance-box"><span>Saldo actual</span><strong id="receivableCurrentBalance">$0.00</strong></div>
         <button class="btn primary full" type="submit">Registrar abono</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="invoiceEmailModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-invoice-email></div>
+    <div class="modal-card email-modal-card">
+      <button class="modal-close" type="button" data-close-invoice-email>×</button>
+      <div class="payment-modal-head">
+        <span class="history-kicker">ENVÍO DE FACTURA PDF</span>
+        <h2 id="invoiceEmailTitle">Enviar factura</h2>
+        <p id="invoiceEmailSummary"></p>
+      </div>
+      <form id="invoiceEmailForm" class="form-grid">
+        <label class="full">Correo del cliente<input id="invoiceEmailTo" type="email" autocomplete="email" placeholder="cliente@correo.com" required></label>
+        <label class="full">Asunto<input id="invoiceEmailSubject" maxlength="160" required></label>
+        <div class="full info-note"><strong>Archivo adjunto:</strong> el sistema generará automáticamente la factura A4 en PDF y la enviará como <code>FAC-xxxxxx.pdf</code>. No necesitas descargar ni adjuntar el archivo manualmente.</div>
+        <div id="invoiceEmailMessage" class="auth-message full" aria-live="polite"></div>
+        <button class="btn primary full" id="invoiceEmailSendBtn" type="submit">Enviar PDF por correo</button>
       </form>
     </div>
   </div>
