@@ -243,7 +243,7 @@ const viewMeta = {
   caja: ['Caja', 'Apertura, movimientos y cierre'],
   clientes: ['Clientes', 'Registro y administración de clientes'],
   equipos: ['Equipos', 'Recepción y seguimiento de equipos'],
-  reparaciones: ['Factura de reparación', 'Repuestos, mano de obra y facturación técnica'],
+  reparaciones: ['Factura de reparación', 'Productos, repuestos y facturación técnica'],
   productos: ['Productos', 'Registro y edición de productos'],
   inventario: ['Inventario', 'Existencias, valoración y stock disponible'],
   'inventario-equipos': ['Inventario de equipos', 'Historial y estado de máquinas ingresadas'],
@@ -821,24 +821,171 @@ function renderRepairOrderOptions() {
   if (current && db.devices.some(d => d.id === current)) select.value = current;
 }
 
-function renderRepairProducts() {
-  const select = document.getElementById('repairProduct');
-  const current = select.value;
-  const q = (document.getElementById('repairProductSearch')?.value || '').toLowerCase();
-  select.innerHTML = '<option value="">Seleccione un producto...</option>' + db.products.filter(p => Number(p.stock) > 0 && (!q || [p.code,p.name,p.brand,p.category].join(' ').toLowerCase().includes(q))).map(p => `<option value="${p.id}" ${p.id === current ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)} · ${money(p.price)} · Stock ${p.stock}</option>`).join('');
-  updateRepairProductPreview();
+function productDisplayText(product) {
+  if (!product) return '';
+  return [product.code || '', product.name || ''].filter(Boolean).join(' — ');
 }
 
-function updateRepairProductPreview() {
-  const id = document.getElementById('repairProduct').value;
-  const p = db.products.find(x => x.id === id);
-  document.getElementById('repairProductPreview').innerHTML = p
-    ? `<strong>${esc(p.name)}</strong> · Precio: <strong>${money(p.price)}</strong> · Stock disponible: <strong>${p.stock}</strong>${p.brand ? ` · Marca: ${esc(p.brand)}` : ''}`
-    : 'Selecciona un producto para ver precio y stock.';
+function closeProductSuggestions(suggestionsId) {
+  const box = document.getElementById(suggestionsId);
+  if (!box) return;
+  box.innerHTML = '';
+  box.classList.remove('open');
+  const input = box.closest('.product-autocomplete')?.querySelector('.search-select-input');
+  if (input) input.setAttribute('aria-expanded', 'false');
 }
 
-document.getElementById('repairProduct').onchange = updateRepairProductPreview;
-document.getElementById('repairProductSearch').oninput = renderRepairProducts;
+function setActiveProductSuggestion(box, index) {
+  const items = [...box.querySelectorAll('.product-suggestion')];
+  if (!items.length) return -1;
+  const next = Math.max(0, Math.min(index, items.length - 1));
+  items.forEach((item, i) => {
+    item.classList.toggle('active', i === next);
+    item.setAttribute('aria-selected', i === next ? 'true' : 'false');
+  });
+  items[next].scrollIntoView({ block: 'nearest' });
+  box.dataset.activeIndex = String(next);
+  return next;
+}
+
+function updateProductPreview(hiddenId, previewId) {
+  const hidden = document.getElementById(hiddenId);
+  const preview = document.getElementById(previewId);
+  if (!hidden || !preview) return;
+  const p = db.products.find(x => x.id === hidden.value);
+  preview.innerHTML = p
+    ? `<strong>${esc(p.code || '-')} — ${esc(p.name)}</strong> · Categoría: <strong>${esc(p.category || '-')}</strong> · Precio: <strong>${money(p.price)}</strong> · Stock disponible: <strong>${Number(p.stock || 0)}</strong>${p.brand ? ` · Marca: ${esc(p.brand)}` : ''}`
+    : 'Busca y selecciona un producto para ver código, precio y stock disponible.';
+}
+
+function renderProductSuggestions(searchId, hiddenId, suggestionsId, previewId) {
+  const input = document.getElementById(searchId);
+  const hidden = document.getElementById(hiddenId);
+  const box = document.getElementById(suggestionsId);
+  if (!input || !hidden || !box) return;
+
+  const q = normalizeSearchText(input.value);
+  const selected = db.products.find(p => p.id === hidden.value);
+  if (selected && normalizeSearchText(input.value) === normalizeSearchText(productDisplayText(selected))) {
+    closeProductSuggestions(suggestionsId);
+    updateProductPreview(hiddenId, previewId);
+    return;
+  }
+
+  hidden.value = '';
+  updateProductPreview(hiddenId, previewId);
+  if (!q) {
+    closeProductSuggestions(suggestionsId);
+    return;
+  }
+
+  const matches = db.products
+    .filter(p => Number(p.stock) > 0 && normalizeSearchText(`${p.code || ''} ${p.name || ''} ${p.category || ''} ${p.brand || ''}`).includes(q))
+    .slice(0, 12);
+
+  box.dataset.activeIndex = '-1';
+  if (!matches.length) {
+    box.innerHTML = '<div class="product-suggestion-empty">No se encontraron productos disponibles.</div>';
+    box.classList.add('open');
+    input.setAttribute('aria-expanded', 'true');
+    return;
+  }
+
+  box.innerHTML = matches.map(p => `
+    <button type="button" class="product-suggestion" role="option" aria-selected="false" data-product-id="${esc(p.id)}">
+      <strong>${esc(p.code || 'Sin código')} — ${esc(p.name || 'Sin nombre')}</strong>
+      <span>${esc(p.category || 'Sin categoría')} · Stock: ${Number(p.stock || 0)} · ${money(p.price)}</span>
+    </button>
+  `).join('');
+  box.classList.add('open');
+  input.setAttribute('aria-expanded', 'true');
+}
+
+function selectProductFromSearch(searchId, hiddenId, suggestionsId, previewId, productId) {
+  const product = db.products.find(p => p.id === productId);
+  if (!product) return;
+  document.getElementById(hiddenId).value = product.id;
+  document.getElementById(searchId).value = productDisplayText(product);
+  closeProductSuggestions(suggestionsId);
+  updateProductPreview(hiddenId, previewId);
+}
+
+function setupProductAutocomplete(searchId, hiddenId, suggestionsId, previewId) {
+  const input = document.getElementById(searchId);
+  const hidden = document.getElementById(hiddenId);
+  const box = document.getElementById(suggestionsId);
+  if (!input || !hidden || !box) return;
+
+  input.addEventListener('input', () => renderProductSuggestions(searchId, hiddenId, suggestionsId, previewId));
+  input.addEventListener('focus', () => {
+    if (input.value.trim() && !hidden.value) renderProductSuggestions(searchId, hiddenId, suggestionsId, previewId);
+  });
+  input.addEventListener('keydown', e => {
+    if (!box.classList.contains('open')) {
+      if (e.key === 'ArrowDown' && input.value.trim()) {
+        renderProductSuggestions(searchId, hiddenId, suggestionsId, previewId);
+        setActiveProductSuggestion(box, 0);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    const items = [...box.querySelectorAll('.product-suggestion')];
+    if (!items.length) {
+      if (e.key === 'Escape') closeProductSuggestions(suggestionsId);
+      return;
+    }
+
+    let active = Number(box.dataset.activeIndex ?? -1);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      active = active < items.length - 1 ? active + 1 : 0;
+      setActiveProductSuggestion(box, active);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = active > 0 ? active - 1 : items.length - 1;
+      setActiveProductSuggestion(box, active);
+    } else if (e.key === 'Enter' && active >= 0) {
+      e.preventDefault();
+      selectProductFromSearch(searchId, hiddenId, suggestionsId, previewId, items[active].dataset.productId);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeProductSuggestions(suggestionsId);
+    }
+  });
+  box.addEventListener('mousedown', e => {
+    const item = e.target.closest('.product-suggestion');
+    if (!item) return;
+    e.preventDefault();
+    selectProductFromSearch(searchId, hiddenId, suggestionsId, previewId, item.dataset.productId);
+  });
+}
+
+function refreshProductAutocomplete(searchId, hiddenId, suggestionsId, previewId) {
+  const hidden = document.getElementById(hiddenId);
+  const input = document.getElementById(searchId);
+  if (!hidden || !input) return;
+  const selected = db.products.find(p => p.id === hidden.value && Number(p.stock) > 0);
+  if (hidden.value && !selected) {
+    hidden.value = '';
+    input.value = '';
+  } else if (selected && !input.value.trim()) {
+    input.value = productDisplayText(selected);
+  }
+  closeProductSuggestions(suggestionsId);
+  updateProductPreview(hiddenId, previewId);
+}
+
+setupProductAutocomplete('saleProductSearch', 'saleProduct', 'saleProductSuggestions', 'saleProductPreview');
+setupProductAutocomplete('repairProductSearch', 'repairProduct', 'repairProductSuggestions', 'repairProductPreview');
+
+document.addEventListener('mousedown', e => {
+  if (!e.target.closest('.product-autocomplete')) {
+    closeProductSuggestions('saleProductSuggestions');
+    closeProductSuggestions('repairProductSuggestions');
+  }
+});
+
 document.getElementById('repairOrderSearch').oninput = renderRepairOrderOptions;
 
 document.getElementById('loadRepairOrderBtn').onclick = () => {
@@ -931,19 +1078,10 @@ document.getElementById('addRepairProductBtn').onclick = () => {
   if (qty + inCart > Number(p.stock)) return toast('Stock insuficiente');
   repairCart.push({ type: 'product', productId: p.id, code: p.code, name: p.name, qty, price: Number(p.price) });
   document.getElementById('repairQty').value = 1;
-  renderRepairCart();
-};
-
-document.getElementById('addRepairServiceBtn').onclick = () => {
-  const d = db.devices.find(x => x.id === activeRepairDeviceId);
-  if (!d) return toast('Primero seleccione una orden');
-  if (d.repairSaleId) return toast('Esta reparación ya fue facturada');
-  const name = document.getElementById('repairServiceDesc').value.trim();
-  const price = Number(document.getElementById('repairServicePrice').value || 0);
-  if (!name || price <= 0) return toast('Ingrese descripción y valor de mano de obra');
-  repairCart.push({ type: 'service', name, qty: 1, price });
-  document.getElementById('repairServiceDesc').value = '';
-  document.getElementById('repairServicePrice').value = '';
+  document.getElementById('repairProduct').value = '';
+  document.getElementById('repairProductSearch').value = '';
+  closeProductSuggestions('repairProductSuggestions');
+  updateProductPreview('repairProduct', 'repairProductPreview');
   renderRepairCart();
 };
 
@@ -960,8 +1098,8 @@ function renderRepairCart() {
   const total = parts.total;
   const taxRate = parts.taxRate;
   document.getElementById('repairCartList').innerHTML = repairCart.map((i, idx) => `
-    <div class="cart-item"><div><strong>${i.type === 'product' ? '📦 ' : '🛠️ '}${esc(i.name)}</strong><div class="muted">${i.type === 'product' ? `${esc(i.code || '')} · ` : ''}${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeRepairCart(${idx})">×</button></div></div>
-  `).join('') || '<div class="empty">Aún no se han agregado repuestos ni mano de obra.</div>';
+    <div class="cart-item"><div><strong>${i.type === 'service' ? '🛠️ ' : '📦 '}${esc(i.name)}</strong><div class="muted">${i.type !== 'service' ? `${esc(i.code || '')} · ` : ''}${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeRepairCart(${idx})">×</button></div></div>
+  `).join('') || '<div class="empty">Aún no se han agregado productos a la reparación.</div>';
   document.getElementById('repairSubtotal').textContent = money(subtotal);
   document.getElementById('repairTax').textContent = money(parts.tax);
   document.getElementById('repairTaxLabel').textContent = `IVA incluido (${taxRate}%)`;
@@ -973,7 +1111,7 @@ document.getElementById('finishRepairBtn').onclick = () => {
   const d = db.devices.find(x => x.id === activeRepairDeviceId);
   if (!d) return toast('Seleccione una orden');
   if (d.repairSaleId) return toast('Esta reparación ya tiene factura');
-  if (!repairCart.length) return toast('Agregue al menos un repuesto o mano de obra');
+  if (!repairCart.length) return toast('Agregue al menos un producto a la reparación');
 
   for (const i of repairCart.filter(i => i.type === 'product')) {
     const p = db.products.find(x => x.id === i.productId);
@@ -1049,10 +1187,8 @@ function renderProducts(filter = '') {
     <tr><td>${esc(p.code)}</td><td><strong>${esc(p.name)}</strong><br><span class="muted">${esc(p.category || '')}</span></td><td>${money(p.cost)}</td><td>${money(p.price)}</td><td>${p.stock}</td><td><span class="status ${Number(p.stock) <= Number(p.min) ? 'bad' : 'good'}">${Number(p.stock) <= Number(p.min) ? 'Stock bajo' : 'Disponible'}</span></td><td><button class="mini" onclick="editProduct('${p.id}')">Editar</button></td></tr>
   `).join('') || '<tr><td colspan="7" class="empty">No hay productos.</td></tr>';
 
-  const currentSale = document.getElementById('saleProduct')?.value || '';
-  const saleQ = (document.getElementById('saleProductSearch')?.value || '').toLowerCase();
-  document.getElementById('saleProduct').innerHTML = '<option value="">Seleccione...</option>' + db.products.filter(p => Number(p.stock) > 0 && (!saleQ || [p.code,p.name,p.brand,p.category].join(' ').toLowerCase().includes(saleQ))).map(p => `<option value="${p.id}" ${p.id === currentSale ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)} · ${money(p.price)} · Stock ${p.stock}</option>`).join('');
-  renderRepairProducts();
+  refreshProductAutocomplete('saleProductSearch', 'saleProduct', 'saleProductSuggestions', 'saleProductPreview');
+  refreshProductAutocomplete('repairProductSearch', 'repairProduct', 'repairProductSuggestions', 'repairProductPreview');
 }
 
 function renderInventory() {
@@ -1083,7 +1219,6 @@ document.getElementById('inventorySearch').oninput = renderInventory;
 document.getElementById('inventoryFilter').onchange = renderInventory;
 
 document.getElementById('productSearch').oninput = e => renderProducts(e.target.value);
-document.getElementById('saleProductSearch').oninput = () => renderProducts(document.getElementById('productSearch').value || '');
 document.getElementById('productForm').onsubmit = e => {
   e.preventDefault();
   const id = document.getElementById('productId').value;
@@ -1143,6 +1278,10 @@ document.getElementById('addProductBtn').onclick = () => {
   if (qty + inCart > Number(p.stock)) return toast('Stock insuficiente');
   saleCart.push({ type: 'product', productId: p.id, code: p.code, name: p.name, qty, price: Number(p.price) });
   document.getElementById('saleQty').value = 1;
+  document.getElementById('saleProduct').value = '';
+  document.getElementById('saleProductSearch').value = '';
+  closeProductSuggestions('saleProductSuggestions');
+  updateProductPreview('saleProduct', 'saleProductPreview');
   renderSaleCart();
 };
 
@@ -1199,6 +1338,10 @@ document.getElementById('finishSaleBtn').onclick = () => {
   document.getElementById('saleClient').value = '';
   document.getElementById('saleClientSearch').value = '';
   closeClientSuggestions('saleClientSuggestions');
+  document.getElementById('saleProduct').value = '';
+  document.getElementById('saleProductSearch').value = '';
+  closeProductSuggestions('saleProductSuggestions');
+  updateProductPreview('saleProduct', 'saleProductPreview');
   save();
   renderSaleCart();
   printInvoice(sale.id);
@@ -1695,13 +1838,12 @@ const guideSteps = {
     { selector: '#deviceClientSearch', icon: '🔎', title: 'Buscar al propietario', text: 'Escribe parte del nombre o de la cédula. Aparecerán coincidencias debajo de la misma barra; toca la persona correcta para seleccionarla.' },
     { selector: '#deviceType', icon: '📷', title: 'Tipo de equipo', text: 'Selecciona el tipo de máquina. Si eliges Otro aparecerá un campo donde puedes escribir Cámara, DVR, NVR, UPS u otro equipo, y ese nombre quedará guardado.' },
     { selector: '#deviceForm', icon: '📝', title: 'Registrar el ingreso', text: 'Completa los datos del equipo y, si corresponde, los días y condiciones de garantía. Puedes Guardar o Guardar e imprimir orden para obtener la orden inmediatamente.' },
-    { selector: '#devicesTable', icon: '🗂️', title: 'Órdenes ingresadas', text: 'Aquí administras las órdenes. El botón Factura de reparación abre un módulo separado para trabajar repuestos, mano de obra y cobro sin recargar esta pantalla.' }
+    { selector: '#devicesTable', icon: '🗂️', title: 'Órdenes ingresadas', text: 'Aquí administras las órdenes. El botón Factura de reparación abre un módulo separado para agregar productos o repuestos y realizar el cobro sin recargar esta pantalla.' }
   ],
   reparaciones: [
     { selector: '#repairOrderSummary', icon: '🧾', title: 'Orden de reparación', text: 'Al entrar desde Equipos se carga automáticamente la orden elegida. También puedes seleccionar otra orden desde la parte superior.' },
-    { selector: '#repairProductSearch', icon: '📦', title: 'Añadir repuestos', text: 'Busca los productos usados en la reparación por código, nombre o marca. El stock se descuenta únicamente al finalizar y facturar la reparación.' },
-    { selector: '#addRepairServiceBtn', icon: '🧰', title: 'Añadir mano de obra', text: 'Registra la descripción del servicio realizado y su valor con IVA incluido.' },
-    { selector: '#repairCartList', icon: '📋', title: 'Detalle de reparación', text: 'Revisa en un solo lugar todos los repuestos y servicios agregados antes de cobrar.' },
+    { selector: '#repairProductSearch', icon: '📦', title: 'Buscar productos', text: 'Escribe nombre, código o categoría. Aparecerán coincidencias con precio y stock. La mano de obra se agrega también como un producto previamente registrado.' },
+    { selector: '#repairCartList', icon: '📋', title: 'Detalle de reparación', text: 'Revisa todos los productos agregados a la reparación antes de cobrar.' },
     { selector: '#finishRepairBtn', icon: '✅', title: 'Generar factura de reparación', text: 'Con la caja abierta, este botón marca el equipo como reparado, descuenta repuestos, registra el ingreso y genera la factura.' }
   ],
   productos: [
@@ -1725,7 +1867,7 @@ const guideSteps = {
   ],
   ventas: [
     { selector: '#saleClientSearch', icon: '👤', title: 'Buscar cliente', text: 'Escribe parte de la cédula o del nombre. Debajo aparecerán las coincidencias con cédula, nombre y teléfono; selecciona una para asignar el cliente.' },
-    { selector: '#saleProductSearch', icon: '📦', title: 'Buscar producto', text: 'Busca el producto por código, nombre o marca y selecciónalo en la lista.' },
+    { selector: '#saleProductSearch', icon: '📦', title: 'Buscar producto', text: 'Escribe nombre, código o categoría. Las coincidencias aparecen debajo con stock y precio; selecciona una para agregarla a la venta.' },
     { selector: '#addProductBtn', icon: '➕', title: 'Agregar al detalle', text: 'Indica la cantidad y agrega el producto. El sistema verifica las existencias antes de completar la venta.' },
     { selector: '#cartList', icon: '🛒', title: 'Detalle de la venta', text: 'Aquí aparecen los productos agregados. Revisa cantidades y precios antes de finalizar.' },
     { selector: '#finishSaleBtn', icon: '🧾', title: 'Finalizar venta', text: 'Selecciona la forma de pago y finaliza. La venta se registra en caja, descuenta el stock y genera el comprobante.' }

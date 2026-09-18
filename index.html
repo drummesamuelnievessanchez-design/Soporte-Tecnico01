@@ -156,7 +156,7 @@
           <article class="panel">
             <div class="panel-head"><h3>Buscar equipo</h3></div>
             <input class="search" id="deviceSearch" placeholder="Orden, cliente, marca, modelo, serie o daño">
-            <div class="info-note"><strong>Flujo de reparación:</strong> en cada orden usa el botón <b>Factura de reparación</b>. Se abrirá un módulo separado para agregar repuestos, mano de obra y generar la factura.</div>
+            <div class="info-note"><strong>Flujo de reparación:</strong> en cada orden usa el botón <b>Factura de reparación</b>. Se abrirá un módulo separado para agregar productos o repuestos y generar la factura.</div>
           </article>
         </div>
 
@@ -185,7 +185,7 @@
 
         <article class="panel repair-panel" id="repairPanel">
           <div class="panel-head repair-head">
-            <div><h3>Factura de reparación</h3><p>Repuestos, mano de obra y cobro vinculados a una orden de servicio.</p></div>
+            <div><h3>Factura de reparación</h3><p>Productos, repuestos y cobro vinculados a una orden de servicio.</p></div>
             <span class="status warn" id="repairStatusLabel">Seleccione una orden</span>
           </div>
 
@@ -197,24 +197,22 @@
 
           <div id="repairOrderSummary" class="repair-summary empty">Seleccione una orden para comenzar.</div>
 
-          <div class="grid-2 align-start repair-workspace">
+          <div class="repair-workspace repair-products-only">
             <div class="repair-column">
-              <h4>Repuestos / productos utilizados</h4>
+              <h4>Productos / repuestos utilizados</h4>
+              <p class="muted repair-product-help">La mano de obra debe estar registrada previamente en Productos y se agrega desde este mismo buscador.</p>
               <div class="form-grid compact-grid">
-                <label class="full">Buscar producto<input id="repairProductSearch" class="search-select-input" placeholder="Código, nombre o marca"></label>
-                <label class="full">Producto<select id="repairProduct"></select></label>
+                <label class="full product-autocomplete-label">Producto
+                  <div class="product-autocomplete">
+                    <input id="repairProductSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Buscar producto por nombre, código o categoría…" aria-autocomplete="list" aria-controls="repairProductSuggestions" aria-expanded="false">
+                    <input type="hidden" id="repairProduct">
+                    <div id="repairProductSuggestions" class="product-suggestions" role="listbox"></div>
+                  </div>
+                </label>
                 <label>Cantidad<input id="repairQty" type="number" min="1" value="1"></label>
-                <button class="btn secondary repair-add-btn" id="addRepairProductBtn" type="button">+ Añadir repuesto</button>
+                <button class="btn secondary repair-add-btn" id="addRepairProductBtn" type="button">+ Añadir producto</button>
               </div>
-              <div class="product-preview" id="repairProductPreview">Selecciona un producto para ver precio y stock.</div>
-            </div>
-            <div class="repair-column">
-              <h4>Servicio / mano de obra</h4>
-              <div class="form-grid compact-grid">
-                <label class="full">Descripción<input id="repairServiceDesc" placeholder="Ej. Limpieza, cambio de SSD, instalación de sistema"></label>
-                <label>Valor (IVA incluido)<input id="repairServicePrice" type="number" min="0" step="0.01" placeholder="0.00"></label>
-                <button class="btn secondary repair-add-btn" id="addRepairServiceBtn" type="button">+ Añadir mano de obra</button>
-              </div>
+              <div class="product-preview" id="repairProductPreview">Busca y selecciona un producto para ver código, precio y stock disponible.</div>
             </div>
           </div>
 
@@ -303,9 +301,15 @@
                   <div id="saleClientSuggestions" class="client-suggestions" role="listbox"></div>
                 </div>
               </label>
-              <label>Buscar producto<input id="saleProductSearch" class="search-select-input" placeholder="Código, nombre o marca"></label>
-              <label>Producto<select id="saleProduct"></select></label>
+              <label class="full product-autocomplete-label">Producto
+                <div class="product-autocomplete">
+                  <input id="saleProductSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Buscar producto por nombre, código o categoría…" aria-autocomplete="list" aria-controls="saleProductSuggestions" aria-expanded="false">
+                  <input type="hidden" id="saleProduct">
+                  <div id="saleProductSuggestions" class="product-suggestions" role="listbox"></div>
+                </div>
+              </label>
               <label>Cantidad<input id="saleQty" type="number" min="1" value="1"></label>
+              <div class="product-preview full" id="saleProductPreview">Busca y selecciona un producto para ver código, precio y stock disponible.</div>
               <button class="btn secondary full" id="addProductBtn" type="button">+ Agregar producto</button>
             </div>
           </article>

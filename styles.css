@@ -88,3 +88,6 @@ body.guide-active .guide-help-btn{opacity:.72}
 #view-reparaciones .repair-panel{margin-top:0}
 #view-reparaciones .repair-head h3{font-size:18px}
 @media (max-width:760px){.repair-module-top{align-items:flex-start;flex-direction:column}.repair-module-top .btn{width:100%}}
+
+/* Autocompletado de productos: Ventas y Factura de reparación */
+.product-autocomplete-label{position:relative}.product-autocomplete{position:relative;width:100%}.product-suggestions{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:130;background:#fff;border:1px solid #d8dee9;border-radius:12px;box-shadow:0 16px 35px rgba(15,23,42,.16);max-height:300px;overflow:auto;padding:6px}.product-suggestions.open{display:block}.product-suggestion{width:100%;border:0;background:#fff;border-radius:9px;padding:10px 12px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:3px;color:var(--text)}.product-suggestion:hover,.product-suggestion:focus,.product-suggestion.active{background:#f0f6ff;outline:none}.product-suggestion strong{font-size:13px}.product-suggestion span{font-size:11px;color:var(--muted);font-weight:600}.product-suggestion-empty{padding:11px 12px;color:var(--muted);font-size:12px;font-weight:600}.repair-products-only{display:block}.repair-product-help{margin:-4px 0 12px}.product-preview.full{grid-column:1/-1}
