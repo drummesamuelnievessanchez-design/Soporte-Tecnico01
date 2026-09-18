@@ -1,3 +1,4 @@
+// Soporte360 V16 · interfaz profesional + optimización de renderizado y sincronización
 const DB_KEY = 'soporte360_db_v1';
 
 const today = () => {
@@ -9,6 +10,14 @@ const money = n => new Intl.NumberFormat('es-EC', { style: 'currency', currency:
 const uid = (p = 'ID') => p + '-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase();
 const clone = obj => JSON.parse(JSON.stringify(obj));
 const esc = (s = '') => String(s).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+const svgIcon = (name, cls = 'ui-icon') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+const debounce = (fn, wait = 120) => {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
+};
 
 const defaults = {
   company: { ruc: '', name: 'Soporte360', legal: '', phone: '', address: '', email: '', logo: '', primary: '#2563eb', secondary: '#0f172a', taxRate: 15, serviceClause: '' },
@@ -51,6 +60,8 @@ let logoDraftUrl = '';
 let cloudClient = null;
 let cloudUser = null;
 let cloudSyncChain = Promise.resolve();
+let cloudSyncTimer = null;
+let cloudPendingSnapshot = null;
 let cloudReady = false;
 let workspaceOwnerId = null;
 let cloudRole = 'owner';
@@ -87,7 +98,8 @@ function setCloudStatus(type, text) {
   const el = document.getElementById('cloudStatus');
   if (!el) return;
   el.className = 'cloud-status ' + type;
-  el.textContent = text;
+  const label = String(text || '').replace(/^☁\s*/, '');
+  el.innerHTML = `${svgIcon('cloud')}<span>${esc(label)}</span>`;
 }
 
 function setAuthMessage(text = '', type = '') {
@@ -135,11 +147,18 @@ async function pushCloudSnapshot(snapshot, userId) {
 
 function queueCloudSync() {
   if (!cloudReady || !cloudUser || !cloudClient) return;
-  const snapshot = clone(db);
-  const userId = workspaceOwnerId || cloudUser.id;
-  cloudSyncChain = cloudSyncChain
-    .catch(() => {})
-    .then(() => pushCloudSnapshot(snapshot, userId));
+  // V16: agrupa cambios rápidos y sincroniza solo el estado más reciente.
+  cloudPendingSnapshot = clone(db);
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => {
+    const snapshot = cloudPendingSnapshot;
+    cloudPendingSnapshot = null;
+    const userId = workspaceOwnerId || cloudUser?.id;
+    if (!snapshot || !userId) return;
+    cloudSyncChain = cloudSyncChain
+      .catch(() => {})
+      .then(() => pushCloudSnapshot(snapshot, userId));
+  }, 280);
 }
 
 async function loadCloudState(user) {
@@ -229,9 +248,47 @@ async function initCloud() {
   });
 }
 
+function getActiveView() {
+  return document.querySelector('.view.active')?.id?.replace('view-', '') || 'dashboard';
+}
+
+function renderShell() {
+  applyTheme();
+  const badge = document.getElementById('cashBadge');
+  if (badge) {
+    badge.textContent = db.cash.open ? `Caja abierta · ${money(cashBalance())}` : 'Caja cerrada';
+    badge.className = 'cash-badge ' + (db.cash.open ? 'open' : 'closed');
+  }
+  const quick = document.getElementById('quickOpenCash');
+  if (quick) quick.textContent = db.cash.open ? 'Ver caja' : 'Abrir caja';
+  applyRoleAccess();
+}
+
+function renderView(view = getActiveView()) {
+  renderShell();
+  switch (view) {
+    case 'dashboard': renderDashboard(); break;
+    case 'caja': renderCash(); break;
+    case 'clientes': renderClients(document.getElementById('clientSearch')?.value || ''); break;
+    case 'equipos': renderDevices(document.getElementById('deviceSearch')?.value || ''); break;
+    case 'reparaciones':
+      renderRepairOrderOptions();
+      renderRepairWorkspace();
+      break;
+    case 'productos': renderProducts(document.getElementById('productSearch')?.value || ''); break;
+    case 'inventario': renderInventory(); break;
+    case 'inventario-equipos': renderMachineInventory(); break;
+    case 'ventas': renderSaleCart(); break;
+    case 'proformas': renderProformaCart(); renderProformas(); break;
+    case 'cuentas-cobrar': renderReceivables(); break;
+    case 'facturas': renderInvoices(); break;
+    case 'configuracion': renderCompany(); break;
+  }
+}
+
 function save(render = true) {
   localStorage.setItem(DB_KEY, JSON.stringify(db));
-  if (render) renderAll();
+  if (render) renderView();
   queueCloudSync();
 }
 
@@ -277,17 +334,7 @@ function showView(v) {
   target.classList.add('active');
   document.getElementById('pageTitle').textContent = viewMeta[v][0];
   document.getElementById('pageSubtitle').textContent = viewMeta[v][1];
-  if (v === 'inventario-equipos') renderMachineInventory();
-  if (v === 'reparaciones') {
-    renderRepairOrderOptions();
-    renderRepairProducts();
-    renderRepairWorkspace();
-  }
-  if (v === 'proformas') {
-    renderProformaCart();
-    renderProformas();
-  }
-  if (v === 'cuentas-cobrar') renderReceivables();
+  renderView(v);
 }
 
 document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -656,7 +703,8 @@ function setupClientAutocomplete(searchId, hiddenId, suggestionsId) {
   const box = document.getElementById(suggestionsId);
   if (!input || !hidden || !box) return;
 
-  input.addEventListener('input', () => renderClientSuggestions(searchId, hiddenId, suggestionsId));
+  const renderSuggestionsDebounced = debounce(() => renderClientSuggestions(searchId, hiddenId, suggestionsId), 90);
+  input.addEventListener('input', renderSuggestionsDebounced);
   input.addEventListener('focus', () => {
     if (input.value.trim() && !hidden.value) renderClientSuggestions(searchId, hiddenId, suggestionsId);
   });
@@ -723,7 +771,7 @@ function renderClients(filter = '') {
   refreshClientSelectors();
 }
 
-document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
+document.getElementById('clientSearch').oninput = debounce(e => renderClients(e.target.value), 120);
 setupClientAutocomplete('deviceClientSearch', 'deviceClient', 'deviceClientSuggestions');
 setupClientAutocomplete('saleClientSearch', 'saleClient', 'saleClientSuggestions');
 setupClientAutocomplete('proformaClientSearch', 'proformaClient', 'proformaClientSuggestions');
@@ -858,10 +906,9 @@ function renderDevices(filter = '') {
     </tr>`;
   }).join('') || '<tr><td colspan="7" class="empty">No hay equipos.</td></tr>';
 
-  renderRepairOrderOptions();
 }
 
-document.getElementById('deviceSearch').oninput = e => renderDevices(e.target.value);
+document.getElementById('deviceSearch').oninput = debounce(e => renderDevices(e.target.value), 120);
 document.getElementById('deviceStatusFilter').onchange = () => renderDevices(document.getElementById('deviceSearch').value || '');
 document.getElementById('deviceForm').onsubmit = e => {
   e.preventDefault();
@@ -1054,7 +1101,8 @@ function setupProductAutocomplete(searchId, hiddenId, suggestionsId, previewId) 
   const box = document.getElementById(suggestionsId);
   if (!input || !hidden || !box) return;
 
-  input.addEventListener('input', () => renderProductSuggestions(searchId, hiddenId, suggestionsId, previewId));
+  const renderSuggestionsDebounced = debounce(() => renderProductSuggestions(searchId, hiddenId, suggestionsId, previewId), 90);
+  input.addEventListener('input', renderSuggestionsDebounced);
   input.addEventListener('focus', () => {
     if (input.value.trim() && !hidden.value) renderProductSuggestions(searchId, hiddenId, suggestionsId, previewId);
   });
@@ -1126,7 +1174,7 @@ document.addEventListener('mousedown', e => {
   }
 });
 
-document.getElementById('repairOrderSearch').oninput = renderRepairOrderOptions;
+document.getElementById('repairOrderSearch').oninput = debounce(renderRepairOrderOptions, 120);
 
 document.getElementById('loadRepairOrderBtn').onclick = () => {
   const id = document.getElementById('repairOrderSelect').value;
@@ -1238,7 +1286,7 @@ function renderRepairCart() {
   const total = parts.total;
   const taxRate = parts.taxRate;
   document.getElementById('repairCartList').innerHTML = repairCart.map((i, idx) => `
-    <div class="cart-item"><div><strong>${i.type === 'service' ? '🛠️ ' : '📦 '}${esc(i.name)}</strong><div class="muted">${i.type !== 'service' ? `${esc(i.code || '')} · ` : ''}${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeRepairCart(${idx})">×</button></div></div>
+    <div class="cart-item"><div><strong>${svgIcon(i.type === 'service' ? 'tools' : 'box', 'item-inline-icon')}${esc(i.name)}</strong><div class="muted">${i.type !== 'service' ? `${esc(i.code || '')} · ` : ''}${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeRepairCart(${idx})">×</button></div></div>
   `).join('') || '<div class="empty">Aún no se han agregado productos a la reparación.</div>';
   document.getElementById('repairSubtotal').textContent = money(subtotal);
   document.getElementById('repairTax').textContent = money(parts.tax);
@@ -1367,10 +1415,10 @@ function renderInventory() {
   }).join('') || '<tr><td colspan="8" class="empty">No hay productos para mostrar.</td></tr>';
 }
 
-document.getElementById('inventorySearch').oninput = renderInventory;
+document.getElementById('inventorySearch').oninput = debounce(renderInventory, 120);
 document.getElementById('inventoryFilter').onchange = renderInventory;
 
-document.getElementById('productSearch').oninput = e => renderProducts(e.target.value);
+document.getElementById('productSearch').oninput = debounce(e => renderProducts(e.target.value), 120);
 document.getElementById('productForm').onsubmit = e => {
   e.preventDefault();
   const id = document.getElementById('productId').value;
@@ -1412,7 +1460,7 @@ function renderSaleCart() {
   const total = parts.total;
   const taxRate = parts.taxRate;
   document.getElementById('cartList').innerHTML = saleCart.map((i, idx) => `
-    <div class="cart-item"><div><strong>📦 ${esc(i.name)}</strong><div class="muted">${esc(i.code || '')} · ${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeSaleCart(${idx})">×</button></div></div>
+    <div class="cart-item"><div><strong>${svgIcon('box', 'item-inline-icon')}${esc(i.name)}</strong><div class="muted">${esc(i.code || '')} · ${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeSaleCart(${idx})">×</button></div></div>
   `).join('') || '<div class="empty">Agregue productos a la venta.</div>';
   document.getElementById('saleSubtotal').textContent = money(subtotal);
   document.getElementById('saleTax').textContent = money(parts.tax);
@@ -1556,7 +1604,7 @@ function renderProformaCart() {
   const list = document.getElementById('proformaCartList');
   if (!list) return;
   list.innerHTML = proformaCart.map((i, idx) => `
-    <div class="cart-item"><div><strong>📦 ${esc(i.name)}</strong><div class="muted">${esc(i.code || '')} · ${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeProformaCart(${idx})">×</button></div></div>
+    <div class="cart-item"><div><strong>${svgIcon('box', 'item-inline-icon')}${esc(i.name)}</strong><div class="muted">${esc(i.code || '')} · ${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeProformaCart(${idx})">×</button></div></div>
   `).join('') || '<div class="empty">Agregue productos a la proforma.</div>';
   document.getElementById('proformaSubtotal').textContent = money(parts.subtotal);
   document.getElementById('proformaTax').textContent = money(parts.tax);
@@ -1637,7 +1685,7 @@ function saveProforma(printAfter = false) {
 
 document.getElementById('saveProformaBtn').onclick = () => saveProforma(false);
 document.getElementById('savePrintProformaBtn').onclick = () => saveProforma(true);
-document.getElementById('proformaSearch').oninput = renderProformas;
+document.getElementById('proformaSearch').oninput = debounce(renderProformas, 120);
 
 function renderProformas() {
   const table = document.getElementById('proformasTable');
@@ -1793,7 +1841,7 @@ function renderReceivables() {
   `).join('') || '<tr><td colspan="8" class="empty">No hay saldos pendientes.</td></tr>';
 }
 
-document.getElementById('receivableSearch').oninput = renderReceivables;
+document.getElementById('receivableSearch').oninput = debounce(renderReceivables, 120);
 
 function closeReceivablePaymentModal() {
   const modal = document.getElementById('receivablePaymentModal');
@@ -2263,12 +2311,14 @@ function renderMachineInventory() {
   }).join('') || '<tr><td colspan="8" class="empty">No hay equipos para mostrar.</td></tr>';
 }
 
-document.getElementById('machineInventorySearch').oninput = renderMachineInventory;
+document.getElementById('machineInventorySearch').oninput = debounce(renderMachineInventory, 120);
 document.getElementById('machineInventoryFilter').onchange = renderMachineInventory;
 
 
 function renderAll() {
-  applyTheme();
+  // Render completo solo al iniciar o al cargar datos desde la nube.
+  // Los guardados normales usan renderView() para no reconstruir módulos ocultos.
+  renderShell();
   renderDashboard();
   renderCash();
   renderClients(document.getElementById('clientSearch')?.value || '');
@@ -2283,7 +2333,6 @@ function renderAll() {
   renderSaleCart();
   renderProformaCart();
   renderRepairWorkspace();
-  applyRoleAccess();
 }
 
 renderAll();
@@ -2465,7 +2514,7 @@ function guideSpeak(text) {
   utter.onstart = () => {
     guideState.speaking = true;
     const status = document.getElementById('guideVoiceStatus');
-    if (status) status.textContent = '🔊 Hablando';
+    if (status) status.textContent = 'Voz activa';
   };
   utter.onend = utter.onerror = () => {
     guideState.speaking = false;
@@ -2495,7 +2544,7 @@ function renderGuideStep({ speak = true } = {}) {
   if (bar) bar.style.width = `${((guideState.index + 1) / steps.length) * 100}%`;
   if (stepTitle) stepTitle.textContent = step.title;
   if (stepText) stepText.textContent = step.text;
-  if (icon) icon.textContent = step.icon || '💡';
+  if (icon) icon.innerHTML = svgIcon('guide');
   if (prev) prev.disabled = guideState.index === 0;
   if (next) next.textContent = guideState.index === steps.length - 1 ? 'Finalizar ✓' : 'Siguiente →';
 
