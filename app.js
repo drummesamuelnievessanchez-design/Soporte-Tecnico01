@@ -394,24 +394,99 @@ document.getElementById('movementForm').onsubmit = e => {
   toast('Movimiento registrado');
 };
 
-function clientOptions(selected = '', filter = '') {
-  const q = String(filter || '').trim().toLowerCase();
-  const list = db.clients.filter(c => !q || [c.cedula, c.name, c.phone, c.email].join(' ').toLowerCase().includes(q));
-  return '<option value="">Seleccione...</option>' + list.map(c => `<option value="${c.id}" ${c.id === selected ? 'selected' : ''}>${esc(c.cedula)} · ${esc(c.name)}</option>`).join('');
+function normalizeSearchText(value = '') {
+  return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
-function refreshClientSelector(selectId, searchId) {
-  const select = document.getElementById(selectId);
-  if (!select) return;
-  const selected = select.value || '';
-  const filter = document.getElementById(searchId)?.value || '';
-  select.innerHTML = clientOptions(selected, filter);
-  if (selected && db.clients.some(c => c.id === selected)) select.value = selected;
+function clientDisplayText(client) {
+  return client ? `${client.cedula || ''} · ${client.name || ''}`.trim() : '';
+}
+
+function closeClientSuggestions(suggestionsId) {
+  const box = document.getElementById(suggestionsId);
+  if (box) {
+    box.innerHTML = '';
+    box.classList.remove('open');
+  }
+}
+
+function renderClientSuggestions(searchId, hiddenId, suggestionsId) {
+  const input = document.getElementById(searchId);
+  const hidden = document.getElementById(hiddenId);
+  const box = document.getElementById(suggestionsId);
+  if (!input || !hidden || !box) return;
+
+  const q = normalizeSearchText(input.value);
+  const selected = db.clients.find(c => c.id === hidden.value);
+  if (selected && normalizeSearchText(input.value) === normalizeSearchText(clientDisplayText(selected))) {
+    closeClientSuggestions(suggestionsId);
+    return;
+  }
+
+  hidden.value = '';
+  if (!q) {
+    closeClientSuggestions(suggestionsId);
+    return;
+  }
+
+  const matches = db.clients
+    .filter(c => normalizeSearchText(`${c.cedula || ''} ${c.name || ''}`).includes(q))
+    .slice(0, 8);
+
+  if (!matches.length) {
+    box.innerHTML = '<div class="client-suggestion-empty">No se encontraron clientes.</div>';
+    box.classList.add('open');
+    return;
+  }
+
+  box.innerHTML = matches.map(c => `
+    <button type="button" class="client-suggestion" role="option" data-client-id="${esc(c.id)}">
+      <strong>${esc(c.name || '')}</strong>
+      <span>${esc(c.cedula || '')}</span>
+    </button>
+  `).join('');
+  box.classList.add('open');
+}
+
+function selectClientFromSearch(searchId, hiddenId, suggestionsId, clientId) {
+  const client = db.clients.find(c => c.id === clientId);
+  if (!client) return;
+  document.getElementById(hiddenId).value = client.id;
+  document.getElementById(searchId).value = clientDisplayText(client);
+  closeClientSuggestions(suggestionsId);
+}
+
+function setupClientAutocomplete(searchId, hiddenId, suggestionsId) {
+  const input = document.getElementById(searchId);
+  const box = document.getElementById(suggestionsId);
+  if (!input || !box) return;
+
+  input.addEventListener('input', () => renderClientSuggestions(searchId, hiddenId, suggestionsId));
+  input.addEventListener('focus', () => {
+    if (input.value.trim() && !document.getElementById(hiddenId).value) {
+      renderClientSuggestions(searchId, hiddenId, suggestionsId);
+    }
+  });
+  box.addEventListener('mousedown', e => {
+    const item = e.target.closest('.client-suggestion');
+    if (!item) return;
+    e.preventDefault();
+    selectClientFromSearch(searchId, hiddenId, suggestionsId, item.dataset.clientId);
+  });
 }
 
 function refreshClientSelectors() {
-  refreshClientSelector('deviceClient', 'deviceClientSearch');
-  refreshClientSelector('saleClient', 'saleClientSearch');
+  [['deviceClientSearch','deviceClient','deviceClientSuggestions'],['saleClientSearch','saleClient','saleClientSuggestions']].forEach(([searchId, hiddenId, suggestionsId]) => {
+    const hidden = document.getElementById(hiddenId);
+    const input = document.getElementById(searchId);
+    if (!hidden || !input) return;
+    const selected = db.clients.find(c => c.id === hidden.value);
+    if (hidden.value && !selected) {
+      hidden.value = '';
+      input.value = '';
+    }
+    closeClientSuggestions(suggestionsId);
+  });
 }
 
 function renderClients(filter = '') {
@@ -423,8 +498,14 @@ function renderClients(filter = '') {
 }
 
 document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
-document.getElementById('deviceClientSearch').oninput = () => refreshClientSelector('deviceClient','deviceClientSearch');
-document.getElementById('saleClientSearch').oninput = () => refreshClientSelector('saleClient','saleClientSearch');
+setupClientAutocomplete('deviceClientSearch', 'deviceClient', 'deviceClientSuggestions');
+setupClientAutocomplete('saleClientSearch', 'saleClient', 'saleClientSuggestions');
+document.addEventListener('mousedown', e => {
+  if (!e.target.closest('.client-autocomplete')) {
+    closeClientSuggestions('deviceClientSuggestions');
+    closeClientSuggestions('saleClientSuggestions');
+  }
+});
 document.getElementById('clientForm').onsubmit = e => {
   e.preventDefault();
   const id = document.getElementById('clientId').value;
@@ -517,6 +598,7 @@ document.getElementById('deviceForm').onsubmit = e => {
   e.preventDefault();
   const id = document.getElementById('deviceId').value;
   const prev = db.devices.find(d => d.id === id);
+  if (!document.getElementById('deviceClient').value) return toast('Busque y seleccione un cliente por nombre o cédula');
   if (document.getElementById('deviceType').value === 'Otro' && !document.getElementById('deviceCustomType').value.trim()) return toast('Escribe el nombre del otro equipo');
   const obj = {
     ...(prev || {}),
@@ -550,7 +632,9 @@ window.editDevice = id => {
     deviceId: 'id', deviceClient: 'clientId', deviceType: 'type', deviceBrand: 'brand', deviceModel: 'model', deviceSerial: 'serial', deviceDamage: 'damage', deviceNotes: 'notes', deviceStatus: 'status'
   };
   Object.entries(map).forEach(([el, prop]) => document.getElementById(el).value = d[prop] ?? '');
-  document.getElementById('deviceClientSearch').value = '';
+  const selectedClient = db.clients.find(c => c.id === d.clientId);
+  document.getElementById('deviceClientSearch').value = clientDisplayText(selectedClient);
+  closeClientSuggestions('deviceClientSuggestions');
   document.getElementById('deviceCustomType').value = d.customType || '';
   toggleCustomDeviceType();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -958,6 +1042,9 @@ document.getElementById('finishSaleBtn').onclick = () => {
   db.sales.push(sale);
   db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, date: now(), type: 'ingreso', amount: total, concept: 'Venta ' + sale.number });
   saleCart = [];
+  document.getElementById('saleClient').value = '';
+  document.getElementById('saleClientSearch').value = '';
+  closeClientSuggestions('saleClientSuggestions');
   save();
   renderSaleCart();
   printInvoice(sale.id);
@@ -1445,7 +1532,7 @@ const guideSteps = {
     { selector: '#clientsTable', icon: '📇', title: 'Listado de clientes', text: 'Aquí se muestran los clientes guardados y las acciones disponibles para administrar cada registro.' }
   ],
   equipos: [
-    { selector: '#deviceClientSearch', icon: '🔎', title: 'Buscar al propietario', text: 'Escribe el nombre o la cédula del cliente. El selector de abajo se filtrará para que puedas elegirlo sin recorrer toda la lista.' },
+    { selector: '#deviceClientSearch', icon: '🔎', title: 'Buscar al propietario', text: 'Escribe parte del nombre o de la cédula. Aparecerán coincidencias debajo de la misma barra; toca la persona correcta para seleccionarla.' },
     { selector: '#deviceType', icon: '📷', title: 'Tipo de equipo', text: 'Selecciona el tipo de máquina. Si eliges Otro aparecerá un campo donde puedes escribir Cámara, DVR, NVR, UPS u otro equipo, y ese nombre quedará guardado.' },
     { selector: '#deviceForm', icon: '📝', title: 'Registrar el ingreso', text: 'Completa marca, modelo, serie, daño reportado, observaciones y estado. Al guardar se genera la orden de trabajo del equipo.' },
     { selector: '#devicesTable', icon: '🗂️', title: 'Órdenes ingresadas', text: 'Aquí puedes revisar las máquinas recibidas, su estado y las acciones disponibles. El propietario también dispone de opciones administrativas como eliminar cuando corresponda.' },
@@ -1474,7 +1561,7 @@ const guideSteps = {
     { selector: '#machineInventoryTable', icon: '📑', title: 'Historial de equipos', text: 'Esta tabla concentra el historial de las máquinas ingresadas al taller con propietario, identificación, equipo, serie, fecha y estado.' }
   ],
   ventas: [
-    { selector: '#saleClientSearch', icon: '👤', title: 'Buscar cliente', text: 'Escribe nombre o cédula para filtrar el cliente que realizará la compra.' },
+    { selector: '#saleClientSearch', icon: '👤', title: 'Buscar cliente', text: 'Escribe parte del nombre o de la cédula y selecciona al cliente desde las coincidencias que aparecen debajo de la misma barra.' },
     { selector: '#saleProductSearch', icon: '📦', title: 'Buscar producto', text: 'Busca el producto por código, nombre o marca y selecciónalo en la lista.' },
     { selector: '#addProductBtn', icon: '➕', title: 'Agregar al detalle', text: 'Indica la cantidad y agrega el producto. El sistema verifica las existencias antes de completar la venta.' },
     { selector: '#cartList', icon: '🛒', title: 'Detalle de la venta', text: 'Aquí aparecen los productos agregados. Revisa cantidades y precios antes de finalizar.' },

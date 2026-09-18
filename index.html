@@ -125,8 +125,13 @@
             <div class="panel-head"><h3>Registrar equipo</h3></div>
             <form id="deviceForm" class="form-grid">
               <input type="hidden" id="deviceId">
-              <label class="full">Buscar cliente<input id="deviceClientSearch" class="search-select-input" placeholder="Escriba nombre o cédula para filtrar"></label>
-              <label class="full">Cliente<select id="deviceClient" required></select></label>
+              <label class="full client-autocomplete-label">Cliente
+                <div class="client-autocomplete">
+                  <input id="deviceClientSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Escriba nombre o cédula..." aria-autocomplete="list" aria-controls="deviceClientSuggestions">
+                  <input type="hidden" id="deviceClient">
+                  <div id="deviceClientSuggestions" class="client-suggestions" role="listbox"></div>
+                </div>
+              </label>
               <label>Tipo<select id="deviceType"><option>Computadora</option><option>Laptop</option><option>Impresora</option><option>PlayStation</option><option>Xbox</option><option>Nintendo Switch</option><option>Celular</option><option>Tablet</option><option>Monitor</option><option>Router</option><option>Otro</option></select></label>
               <label id="deviceCustomTypeWrap" class="hidden-field">Nombre del otro equipo<input id="deviceCustomType" placeholder="Ej. Cámara, DVR, NVR, UPS"></label>
               <label>Marca<input id="deviceBrand" required></label>
@@ -269,8 +274,13 @@
           <article class="panel">
             <div class="panel-head"><div><h3>Nueva venta de productos</h3><p>Este módulo es únicamente para productos vendidos en mostrador.</p></div></div>
             <div class="form-grid">
-              <label class="full">Buscar cliente<input id="saleClientSearch" class="search-select-input" placeholder="Escriba nombre o cédula para filtrar"></label>
-              <label class="full">Cliente<select id="saleClient"></select></label>
+              <label class="full client-autocomplete-label">Cliente
+                <div class="client-autocomplete">
+                  <input id="saleClientSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Escriba nombre o cédula..." aria-autocomplete="list" aria-controls="saleClientSuggestions">
+                  <input type="hidden" id="saleClient">
+                  <div id="saleClientSuggestions" class="client-suggestions" role="listbox"></div>
+                </div>
+              </label>
               <label>Buscar producto<input id="saleProductSearch" class="search-select-input" placeholder="Código, nombre o marca"></label>
               <label>Producto<select id="saleProduct"></select></label>
               <label>Cantidad<input id="saleQty" type="number" min="1" value="1"></label>
