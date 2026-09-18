@@ -330,13 +330,7 @@
               <label>Color principal<input id="primaryColor" type="color" value="#2563eb"></label>
               <label>Color secundario<input id="secondaryColor" type="color" value="#0f172a"></label>
               <button class="btn secondary full" id="applyColorsBtn">Aplicar colores</button>
-              <div class="full email-config-box">
-                <strong>Envío automático de facturas por correo (opcional)</strong>
-                <p>Para envío automático puedes conectar EmailJS. Si no lo configuras, el botón “Correo” abrirá tu aplicación de correo con la factura preparada.</p>
-                <label>Service ID<input id="emailjsServiceId" placeholder="service_xxxxx"></label>
-                <label>Template ID<input id="emailjsTemplateId" placeholder="template_xxxxx"></label>
-                <label>Public Key<input id="emailjsPublicKey" placeholder="Public key de EmailJS"></label>
-              </div>
+              <div class="full info-note"><strong>Correo de facturas:</strong> registra el correo de cada cliente. En Facturas tendrás el botón “Enviar factura”, que prepara el correo automáticamente con todos los datos del comprobante.</div>
               <button class="btn danger full" id="resetDataBtn">Restablecer datos de prueba</button>
             </div>
           </article>
@@ -421,7 +415,6 @@
 
   <div id="toast" class="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script src="supabase-config.js"></script>
   <script src="app.js"></script>
 </body>

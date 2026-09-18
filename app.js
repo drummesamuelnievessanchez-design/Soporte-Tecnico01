@@ -11,7 +11,7 @@ const clone = obj => JSON.parse(JSON.stringify(obj));
 const esc = (s = '') => String(s).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
 
 const defaults = {
-  company: { ruc: '', name: 'Soporte360', legal: '', phone: '', address: '', email: '', logo: '', primary: '#2563eb', secondary: '#0f172a', taxRate: 15, emailjsServiceId: '', emailjsTemplateId: '', emailjsPublicKey: '' },
+  company: { ruc: '', name: 'Soporte360', legal: '', phone: '', address: '', email: '', logo: '', primary: '#2563eb', secondary: '#0f172a', taxRate: 15 },
   cash: { open: false, opening: 0, openedAt: null, closedAt: null, lastClosedTotal: 0, movements: [] },
   clients: [],
   devices: [],
@@ -786,7 +786,6 @@ document.getElementById('finishRepairBtn').onclick = () => {
   save();
   renderRepairCart();
   printInvoice(sale.id);
-  autoSendInvoiceEmail(sale.id);
   toast('Reparación finalizada y facturada');
 };
 
@@ -962,7 +961,6 @@ document.getElementById('finishSaleBtn').onclick = () => {
   save();
   renderSaleCart();
   printInvoice(sale.id);
-  autoSendInvoiceEmail(sale.id);
   toast('Venta registrada');
 };
 
@@ -976,7 +974,7 @@ function renderInvoices() {
       <td>${esc(s.clientName)}</td>
       <td>${esc(s.payment)}</td>
       <td><strong>${money(s.total)}</strong></td>
-      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Correo</button>${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button>` : ''}</div></td>
+      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Enviar factura</button>${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button>` : ''}</div></td>
     </tr>
   `).join('') || '<tr><td colspan="8" class="empty">No hay facturas.</td></tr>';
 }
@@ -1010,49 +1008,18 @@ function invoiceEmailText(s) {
   return `Hola ${s.clientName || ''},\n\nAdjuntamos el detalle de su comprobante ${s.number}.\n\n${lines}\n\nSubtotal sin IVA: ${money(s.subtotal)}\nIVA incluido (${s.taxRate || 0}%): ${money(s.tax)}\nTOTAL: ${money(s.total)}\n\nGracias por confiar en ${db.company.name || 'nuestro servicio'}.`;
 }
 
-async function sendInvoiceViaEmailJS(s) {
-  const toEmail = getClientEmail(s.clientId, s.clientEmail);
-  const cfg = db.company;
-  if (!toEmail || !cfg.emailjsServiceId || !cfg.emailjsTemplateId || !cfg.emailjsPublicKey || !window.emailjs) return false;
-  try {
-    window.emailjs.init({ publicKey: cfg.emailjsPublicKey });
-    await window.emailjs.send(cfg.emailjsServiceId, cfg.emailjsTemplateId, {
-      to_email: toEmail,
-      client_name: s.clientName || '',
-      invoice_number: s.number,
-      invoice_total: money(s.total),
-      company_name: cfg.name || 'Soporte360',
-      message: invoiceEmailText(s)
-    });
-    toast('Factura enviada por correo a ' + toEmail);
-    return true;
-  } catch (err) {
-    console.error('EmailJS:', err);
-    toast('No se pudo enviar automáticamente. Se abrirá el correo manual.');
-    return false;
-  }
-}
-
-window.sendInvoiceEmail = async id => {
+window.sendInvoiceEmail = id => {
   const s = db.sales.find(x => x.id === id);
   if (!s) return;
   const toEmail = getClientEmail(s.clientId, s.clientEmail);
   if (!toEmail) return toast('El cliente no tiene correo registrado');
-  if (await sendInvoiceViaEmailJS(s)) return;
-  const subject = encodeURIComponent(`${db.company.name || 'Soporte360'} - ${s.number}`);
+  const subject = encodeURIComponent(`${db.company.name || 'Soporte360'} - Factura ${s.number}`);
   const body = encodeURIComponent(invoiceEmailText(s));
-  window.location.href = `mailto:${encodeURIComponent(toEmail)}?subject=${subject}&body=${body}`;
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail)}&su=${subject}&body=${body}`;
+  const win = window.open(gmailUrl, '_blank');
+  if (!win) window.location.href = `mailto:${encodeURIComponent(toEmail)}?subject=${subject}&body=${body}`;
+  toast('Factura preparada para enviar a ' + toEmail);
 };
-
-async function autoSendInvoiceEmail(id) {
-  const s = db.sales.find(x => x.id === id);
-  if (!s) return;
-  const toEmail = getClientEmail(s.clientId, s.clientEmail);
-  if (!toEmail) return;
-  if (db.company.emailjsServiceId && db.company.emailjsTemplateId && db.company.emailjsPublicKey) {
-    await sendInvoiceViaEmailJS(s);
-  }
-}
 
 window.printInvoice = (id, format = 'a4') => {
   const s = db.sales.find(x => x.id === id);
@@ -1278,9 +1245,6 @@ function renderCompany() {
   document.getElementById('companyAddress').value = c.address || '';
   document.getElementById('companyEmail').value = c.email || '';
   document.getElementById('companyTaxRate').value = c.taxRate ?? 15;
-  document.getElementById('emailjsServiceId').value = c.emailjsServiceId || '';
-  document.getElementById('emailjsTemplateId').value = c.emailjsTemplateId || '';
-  document.getElementById('emailjsPublicKey').value = c.emailjsPublicKey || '';
   document.getElementById('primaryColor').value = c.primary || '#2563eb';
   document.getElementById('secondaryColor').value = c.secondary || '#0f172a';
   renderLogoPreview(logoDraftUrl || c.logo || '');
@@ -1317,10 +1281,7 @@ document.getElementById('companyForm').onsubmit = async e => {
     phone: document.getElementById('companyPhone').value.trim(),
     address: document.getElementById('companyAddress').value.trim(),
     email: document.getElementById('companyEmail').value.trim(),
-    taxRate: Number(document.getElementById('companyTaxRate').value || 0),
-    emailjsServiceId: document.getElementById('emailjsServiceId').value.trim(),
-    emailjsTemplateId: document.getElementById('emailjsTemplateId').value.trim(),
-    emailjsPublicKey: document.getElementById('emailjsPublicKey').value.trim()
+    taxRate: Number(document.getElementById('companyTaxRate').value || 0)
   });
   if (logoDraftUrl) db.company.logo = logoDraftUrl;
   logoDraftUrl = '';
@@ -1520,7 +1481,7 @@ const guideSteps = {
     { selector: '#finishSaleBtn', icon: '🧾', title: 'Finalizar venta', text: 'Selecciona la forma de pago y finaliza. La venta se registra en caja, descuenta el stock y genera el comprobante.' }
   ],
   facturas: [
-    { selector: '#invoicesTable', icon: '📄', title: 'Historial de facturas', text: 'Aquí encontrarás las facturas de ventas y reparaciones. Desde las acciones puedes imprimir en A4 o ticket, preparar el correo y, como propietario, eliminar una factura incorrecta.' },
+    { selector: '#invoicesTable', icon: '📄', title: 'Historial de facturas', text: 'Aquí encontrarás las facturas de ventas y reparaciones. Desde las acciones puedes imprimir en A4 o ticket, usar Enviar factura para preparar el correo del cliente y eliminar una factura incorrecta.' },
     { selector: '#view-facturas .panel-head', icon: '⚠️', title: 'Eliminar con cuidado', text: 'La eliminación de una factura es administrativa. Si borras una factura incorrecta, el sistema intenta revertir los movimientos relacionados, por lo que debes usar esta opción únicamente cuando sea necesario.' }
   ],
   configuracion: [
@@ -1528,7 +1489,6 @@ const guideSteps = {
     { selector: '#companyTaxRate', icon: '％', title: 'IVA incluido', text: 'Define aquí el porcentaje de IVA. Los precios registrados ya incluyen ese IVA: un producto guardado a 60 dólares seguirá costando 60 dólares al cliente.' },
     { selector: '#companyLogoPreview', icon: '🖼️', title: 'Logo de la empresa', text: 'Carga y revisa aquí el logo que aparecerá en el sistema y en los comprobantes.' },
     { selector: '#primaryColor', icon: '🎨', title: 'Colores del sistema', text: 'Elige los colores principales de la aplicación y pulsa Aplicar colores para personalizar la identidad visual del negocio.' },
-    { selector: '#view-configuracion .email-config-box', icon: '✉️', title: 'Correo de facturas', text: 'EmailJS es opcional. Si lo configuras, permite automatizar el envío; si no, el botón Correo prepara el mensaje en la aplicación de correo del dispositivo.' },
     { selector: '#resetDataBtn', icon: '⚠️', title: 'Restablecer datos', text: 'Esta opción es delicada. Úsala únicamente si realmente necesitas restablecer la información de la aplicación.' }
   ]
 };
