@@ -11,7 +11,7 @@ const clone = obj => JSON.parse(JSON.stringify(obj));
 const esc = (s = '') => String(s).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
 
 const defaults = {
-  company: { ruc: '', name: 'Soporte360', legal: '', phone: '', address: '', email: '', logo: '', primary: '#2563eb', secondary: '#0f172a' },
+  company: { ruc: '', name: 'Soporte360', legal: '', phone: '', address: '', email: '', logo: '', primary: '#2563eb', secondary: '#0f172a', taxRate: 15, emailjsServiceId: '', emailjsTemplateId: '', emailjsPublicKey: '' },
   cash: { open: false, opening: 0, openedAt: null, closedAt: null, lastClosedTotal: 0, movements: [] },
   clients: [],
   devices: [],
@@ -227,7 +227,8 @@ const viewMeta = {
   caja: ['Caja', 'Apertura, movimientos y cierre'],
   clientes: ['Clientes', 'Registro y administración de clientes'],
   equipos: ['Equipos', 'Recepción, reparación y seguimiento técnico'],
-  productos: ['Inventario', 'Productos, repuestos y stock'],
+  productos: ['Productos', 'Registro y edición de productos'],
+  inventario: ['Inventario', 'Existencias, valoración y stock disponible'],
   ventas: ['Ventas', 'Venta directa de productos'],
   facturas: ['Facturas', 'Historial de ventas y reparaciones'],
   configuracion: ['Configuración', 'Empresa, logo y colores']
@@ -244,6 +245,17 @@ function showView(v) {
 document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => showView(b.dataset.view));
 document.getElementById('todayLabel').textContent = new Date().toLocaleDateString('es-EC', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 document.getElementById('quickOpenCash').onclick = () => { showView('caja'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+
+function setSidebarCollapsed(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  const btn = document.getElementById('sidebarToggle');
+  btn.textContent = collapsed ? '›' : '‹';
+  btn.title = collapsed ? 'Ampliar menú' : 'Minimizar menú';
+  localStorage.setItem('soporte360_sidebar_collapsed', collapsed ? '1' : '0');
+}
+document.getElementById('sidebarToggle').onclick = () => setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+setSidebarCollapsed(localStorage.getItem('soporte360_sidebar_collapsed') === '1');
+
 
 function applyTheme() {
   document.documentElement.style.setProperty('--primary', db.company.primary || '#2563eb');
@@ -263,11 +275,35 @@ function saleTypeLabel(s) {
   return s.source === 'repair' ? 'Reparación' : 'Venta';
 }
 
+function currentTaxRate() {
+  const rate = Number(db.company.taxRate);
+  return Number.isFinite(rate) && rate >= 0 ? rate : 0;
+}
+
+function splitIncludedTax(gross, rate = currentTaxRate()) {
+  gross = Number(gross || 0);
+  rate = Number(rate || 0);
+  if (rate <= 0) return { subtotal: gross, tax: 0, total: gross, taxRate: 0 };
+  const subtotal = gross / (1 + rate / 100);
+  const tax = gross - subtotal;
+  return { subtotal, tax, total: gross, taxRate: rate };
+}
+
+function deviceIsRepaired(d) {
+  return d.status === 'Reparado' || d.status === 'Entregado';
+}
+
+function getClientEmail(clientId, fallback = '') {
+  return db.clients.find(c => c.id === clientId)?.email || fallback || '';
+}
+
 function renderDashboard() {
   const todaySales = db.sales.filter(isSaleToday);
   document.getElementById('statSales').textContent = money(todaySales.reduce((a, s) => a + Number(s.total || 0), 0));
   document.getElementById('statClients').textContent = db.clients.length;
   document.getElementById('statDevices').textContent = db.devices.length;
+  document.getElementById('statPendingDevices').textContent = db.devices.filter(d => !deviceIsRepaired(d)).length;
+  document.getElementById('statRepairedDevices').textContent = db.devices.filter(deviceIsRepaired).length;
   document.getElementById('statLowStock').textContent = db.products.filter(p => Number(p.stock) <= Number(p.min)).length;
 
   document.getElementById('dashboardCash').innerHTML = db.cash.open
@@ -344,9 +380,9 @@ function clientOptions(selected = '') {
 
 function renderClients(filter = '') {
   const q = filter.toLowerCase();
-  document.getElementById('clientsTable').innerHTML = db.clients.filter(c => [c.cedula, c.name, c.phone, c.address].join(' ').toLowerCase().includes(q)).map(c => `
-    <tr><td>${esc(c.cedula)}</td><td><strong>${esc(c.name)}</strong></td><td>${esc(c.phone)}</td><td>${esc(c.address)}</td><td><button class="mini" onclick="editClient('${c.id}')">Editar</button></td></tr>
-  `).join('') || '<tr><td colspan="5" class="empty">No hay clientes.</td></tr>';
+  document.getElementById('clientsTable').innerHTML = db.clients.filter(c => [c.cedula, c.name, c.phone, c.email, c.address].join(' ').toLowerCase().includes(q)).map(c => `
+    <tr><td>${esc(c.cedula)}</td><td><strong>${esc(c.name)}</strong></td><td>${esc(c.phone)}</td><td>${esc(c.email || '-')}</td><td>${esc(c.address)}</td><td><button class="mini" onclick="editClient('${c.id}')">Editar</button></td></tr>
+  `).join('') || '<tr><td colspan="6" class="empty">No hay clientes.</td></tr>';
 
   const deviceSelected = document.getElementById('deviceClient')?.value || '';
   const saleSelected = document.getElementById('saleClient')?.value || '';
@@ -366,6 +402,7 @@ document.getElementById('clientForm').onsubmit = e => {
     cedula,
     name: document.getElementById('clientName').value.trim(),
     phone: document.getElementById('clientPhone').value.trim(),
+    email: document.getElementById('clientEmail').value.trim(),
     address: document.getElementById('clientAddress').value.trim()
   };
   if (id) db.clients = db.clients.map(c => c.id === id ? obj : c); else db.clients.push(obj);
@@ -383,6 +420,7 @@ window.editClient = id => {
   document.getElementById('clientCedula').value = c.cedula;
   document.getElementById('clientName').value = c.name;
   document.getElementById('clientPhone').value = c.phone;
+  document.getElementById('clientEmail').value = c.email || '';
   document.getElementById('clientAddress').value = c.address;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
@@ -394,15 +432,22 @@ function nextOrderNumber() {
 
 function renderDevices(filter = '') {
   const q = filter.toLowerCase();
+  const statusFilter = document.getElementById('deviceStatusFilter')?.value || 'all';
   const filtered = db.devices.filter(d => {
     const c = db.clients.find(x => x.id === d.clientId);
-    return [d.order, c?.name, c?.cedula, d.type, d.brand, d.model, d.serial, d.damage, d.status].join(' ').toLowerCase().includes(q);
+    const matchesText = [d.order, c?.name, c?.cedula, d.type, d.brand, d.model, d.serial, d.damage, d.status].join(' ').toLowerCase().includes(q);
+    const matchesStatus = statusFilter === 'all' || (statusFilter === 'pending' ? !deviceIsRepaired(d) : d.status === statusFilter);
+    return matchesText && matchesStatus;
   });
+  document.getElementById('deviceCountAll').textContent = db.devices.length;
+  document.getElementById('deviceCountPending').textContent = db.devices.filter(d => !deviceIsRepaired(d)).length;
+  document.getElementById('deviceCountRepaired').textContent = db.devices.filter(d => d.status === 'Reparado').length;
+  document.getElementById('deviceCountDelivered').textContent = db.devices.filter(d => d.status === 'Entregado').length;
 
   document.getElementById('devicesTable').innerHTML = filtered.map(d => {
     const c = db.clients.find(x => x.id === d.clientId);
     const alreadyInvoiced = !!d.repairSaleId;
-    const invoiceButton = alreadyInvoiced ? `<button class="mini good-mini" onclick="printInvoice('${d.repairSaleId}')">Factura</button>` : `<button class="mini primary-mini" onclick="openRepair('${d.id}')">Reparar</button>`;
+    const invoiceButton = alreadyInvoiced ? `<button class="mini good-mini" onclick="printInvoice('${d.repairSaleId}')">Factura</button><button class="mini danger" onclick="deleteInvoice('${d.repairSaleId}', true)">Eliminar factura</button>` : `<button class="mini primary-mini" onclick="openRepair('${d.id}')">Reparar</button>`;
     const deliveredButton = d.status === 'Reparado' ? `<button class="mini" onclick="markDelivered('${d.id}')">Entregado</button>` : '';
     return `<tr>
       <td><strong>${esc(d.order)}</strong><br><span class="muted">${esc(d.date || '')}</span></td>
@@ -411,7 +456,7 @@ function renderDevices(filter = '') {
       <td>${esc(d.serial || '-')}</td>
       <td>${esc(d.damage)}</td>
       <td><span class="status ${d.status === 'Reparado' || d.status === 'Entregado' ? 'good' : ''}">${esc(d.status)}</span></td>
-      <td><div class="action-row">${invoiceButton}${deliveredButton}<button class="mini" onclick="editDevice('${d.id}')">Editar</button><button class="mini" onclick="printWorkOrder('${d.id}')">Orden</button></div></td>
+      <td><div class="action-row">${invoiceButton}${deliveredButton}<button class="mini" onclick="editDevice('${d.id}')">Editar</button><button class="mini" onclick="printWorkOrder('${d.id}')">Orden</button><button class="mini danger" onclick="deleteDevice('${d.id}')">Eliminar equipo</button></div></td>
     </tr>`;
   }).join('') || '<tr><td colspan="7" class="empty">No hay equipos.</td></tr>';
 
@@ -419,6 +464,7 @@ function renderDevices(filter = '') {
 }
 
 document.getElementById('deviceSearch').oninput = e => renderDevices(e.target.value);
+document.getElementById('deviceStatusFilter').onchange = () => renderDevices(document.getElementById('deviceSearch').value || '');
 document.getElementById('deviceForm').onsubmit = e => {
   e.preventDefault();
   const id = document.getElementById('deviceId').value;
@@ -462,6 +508,17 @@ window.markDelivered = id => {
   d.deliveredAt = now();
   save();
   toast('Equipo marcado como entregado');
+};
+
+window.deleteDevice = id => {
+  const d = db.devices.find(x => x.id === id);
+  if (!d) return;
+  if (d.repairSaleId) return toast('Primero elimina la factura de reparación vinculada.');
+  if (!confirm(`¿Eliminar definitivamente la orden ${d.order}?`)) return;
+  db.devices = db.devices.filter(x => x.id !== id);
+  if (activeRepairDeviceId === id) { activeRepairDeviceId = ''; repairCart = []; }
+  save();
+  toast('Equipo eliminado');
 };
 
 function renderRepairOrderOptions() {
@@ -596,16 +653,19 @@ window.removeRepairCart = idx => {
   renderRepairCart();
 };
 
-document.getElementById('repairTaxRate').oninput = renderRepairCart;
 
 function renderRepairCart() {
-  const subtotal = repairCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
-  const taxRate = Number(document.getElementById('repairTaxRate').value || 0);
-  const total = subtotal * (1 + taxRate / 100);
+  const gross = repairCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
+  const parts = splitIncludedTax(gross);
+  const subtotal = parts.subtotal;
+  const total = parts.total;
+  const taxRate = parts.taxRate;
   document.getElementById('repairCartList').innerHTML = repairCart.map((i, idx) => `
     <div class="cart-item"><div><strong>${i.type === 'product' ? '📦 ' : '🛠️ '}${esc(i.name)}</strong><div class="muted">${i.type === 'product' ? `${esc(i.code || '')} · ` : ''}${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeRepairCart(${idx})">×</button></div></div>
   `).join('') || '<div class="empty">Aún no se han agregado repuestos ni mano de obra.</div>';
   document.getElementById('repairSubtotal').textContent = money(subtotal);
+  document.getElementById('repairTax').textContent = money(parts.tax);
+  document.getElementById('repairTaxLabel').textContent = `IVA incluido (${taxRate}%)`;
   document.getElementById('repairTotal').textContent = money(total);
 }
 
@@ -624,10 +684,9 @@ document.getElementById('finishRepairBtn').onclick = () => {
   const c = db.clients.find(x => x.id === d.clientId);
   if (!c) return toast('El equipo no tiene un cliente válido');
 
-  const subtotal = repairCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
-  const taxRate = Number(document.getElementById('repairTaxRate').value || 0);
-  const tax = subtotal * taxRate / 100;
-  const total = subtotal + tax;
+  const gross = repairCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
+  const parts = splitIncludedTax(gross);
+  const { subtotal, taxRate, tax, total } = parts;
   const sale = {
     id: uid('VTA'),
     number: nextInvoiceNumber(),
@@ -640,6 +699,8 @@ document.getElementById('finishRepairBtn').onclick = () => {
     clientName: c.name,
     clientCedula: c.cedula,
     clientPhone: c.phone,
+    clientEmail: c.email || '',
+    taxIncluded: true,
     payment: document.getElementById('repairPaymentMethod').value,
     items: clone(repairCart),
     subtotal, taxRate, tax, total
@@ -654,12 +715,13 @@ document.getElementById('finishRepairBtn').onclick = () => {
   d.status = 'Reparado';
   d.repairedAt = now();
   d.repairSaleId = sale.id;
-  db.cash.movements.push({ id: uid('MOV'), date: now(), type: 'ingreso', amount: total, concept: `Reparación ${d.order} · ${sale.number}` });
+  db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, date: now(), type: 'ingreso', amount: total, concept: `Reparación ${d.order} · ${sale.number}` });
 
   repairCart = [];
   save();
   renderRepairCart();
   printInvoice(sale.id);
+  autoSendInvoiceEmail(sale.id);
   toast('Reparación finalizada y facturada');
 };
 
@@ -689,6 +751,33 @@ function renderProducts(filter = '') {
   document.getElementById('saleProduct').innerHTML = '<option value="">Seleccione...</option>' + db.products.filter(p => Number(p.stock) > 0).map(p => `<option value="${p.id}" ${p.id === currentSale ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)} · ${money(p.price)} · Stock ${p.stock}</option>`).join('');
   renderRepairProducts();
 }
+
+function renderInventory() {
+  const q = (document.getElementById('inventorySearch')?.value || '').toLowerCase();
+  const f = document.getElementById('inventoryFilter')?.value || 'all';
+  const rows = db.products.filter(p => {
+    const match = [p.code, p.name, p.category, p.brand].join(' ').toLowerCase().includes(q);
+    const stock = Number(p.stock || 0), min = Number(p.min || 0);
+    const state = f === 'all' || (f === 'available' && stock > 0) || (f === 'low' && stock <= min) || (f === 'zero' && stock <= 0);
+    return match && state;
+  });
+  const units = db.products.reduce((a,p)=>a+Number(p.stock||0),0);
+  const costValue = db.products.reduce((a,p)=>a+Number(p.stock||0)*Number(p.cost||0),0);
+  const saleValue = db.products.reduce((a,p)=>a+Number(p.stock||0)*Number(p.price||0),0);
+  document.getElementById('inventoryUnits').textContent = units;
+  document.getElementById('inventoryCostValue').textContent = money(costValue);
+  document.getElementById('inventorySaleValue').textContent = money(saleValue);
+  document.getElementById('inventoryLow').textContent = db.products.filter(p=>Number(p.stock||0)<=Number(p.min||0)).length;
+  document.getElementById('inventoryTable').innerHTML = rows.map(p => {
+    const stock=Number(p.stock||0), min=Number(p.min||0);
+    const cls = stock<=0 ? 'bad' : stock<=min ? 'warn' : 'good';
+    const label = stock<=0 ? 'Sin stock' : stock<=min ? 'Stock bajo' : 'Disponible';
+    return `<tr><td>${esc(p.code)}</td><td><strong>${esc(p.name)}</strong></td><td>${esc(p.category||'-')}</td><td>${esc(p.brand||'-')}</td><td>${money(p.cost)}</td><td>${money(p.price)}</td><td><strong>${stock}</strong></td><td><span class="status ${cls}">${label}</span></td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="empty">No hay productos para mostrar.</td></tr>';
+}
+
+document.getElementById('inventorySearch').oninput = renderInventory;
+document.getElementById('inventoryFilter').onchange = renderInventory;
 
 document.getElementById('productSearch').oninput = e => renderProducts(e.target.value);
 document.getElementById('productForm').onsubmit = e => {
@@ -723,17 +812,20 @@ window.editProduct = id => {
 };
 
 function renderSaleCart() {
-  const subtotal = saleCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
-  const taxRate = Number(document.getElementById('taxRate').value || 0);
-  const total = subtotal * (1 + taxRate / 100);
+  const gross = saleCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
+  const parts = splitIncludedTax(gross);
+  const subtotal = parts.subtotal;
+  const total = parts.total;
+  const taxRate = parts.taxRate;
   document.getElementById('cartList').innerHTML = saleCart.map((i, idx) => `
     <div class="cart-item"><div><strong>📦 ${esc(i.name)}</strong><div class="muted">${esc(i.code || '')} · ${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeSaleCart(${idx})">×</button></div></div>
   `).join('') || '<div class="empty">Agregue productos a la venta.</div>';
   document.getElementById('saleSubtotal').textContent = money(subtotal);
+  document.getElementById('saleTax').textContent = money(parts.tax);
+  document.getElementById('saleTaxLabel').textContent = `IVA incluido (${taxRate}%)`;
   document.getElementById('saleTotal').textContent = money(total);
 }
 
-document.getElementById('taxRate').oninput = renderSaleCart;
 document.getElementById('addProductBtn').onclick = () => {
   const id = document.getElementById('saleProduct').value;
   const qty = Number(document.getElementById('saleQty').value || 1);
@@ -769,10 +861,9 @@ document.getElementById('finishSaleBtn').onclick = () => {
     if (!p || Number(p.stock) < Number(i.qty)) return toast('Stock insuficiente para ' + i.name);
   }
 
-  const subtotal = saleCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
-  const taxRate = Number(document.getElementById('taxRate').value || 0);
-  const tax = subtotal * taxRate / 100;
-  const total = subtotal + tax;
+  const gross = saleCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
+  const parts = splitIncludedTax(gross);
+  const { subtotal, taxRate, tax, total } = parts;
   const sale = {
     id: uid('VTA'),
     number: nextInvoiceNumber(),
@@ -784,6 +875,8 @@ document.getElementById('finishSaleBtn').onclick = () => {
     clientName: c.name,
     clientCedula: c.cedula,
     clientPhone: c.phone,
+    clientEmail: c.email || '',
+    taxIncluded: true,
     payment: document.getElementById('paymentMethod').value,
     items: clone(saleCart),
     subtotal, taxRate, tax, total
@@ -794,11 +887,12 @@ document.getElementById('finishSaleBtn').onclick = () => {
     p.stock -= Number(i.qty);
   });
   db.sales.push(sale);
-  db.cash.movements.push({ id: uid('MOV'), date: now(), type: 'ingreso', amount: total, concept: 'Venta ' + sale.number });
+  db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, date: now(), type: 'ingreso', amount: total, concept: 'Venta ' + sale.number });
   saleCart = [];
   save();
   renderSaleCart();
   printInvoice(sale.id);
+  autoSendInvoiceEmail(sale.id);
   toast('Venta registrada');
 };
 
@@ -812,9 +906,81 @@ function renderInvoices() {
       <td>${esc(s.clientName)}</td>
       <td>${esc(s.payment)}</td>
       <td><strong>${money(s.total)}</strong></td>
-      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button></div></td>
+      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Correo</button><button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button></div></td>
     </tr>
   `).join('') || '<tr><td colspan="8" class="empty">No hay facturas.</td></tr>';
+}
+
+window.deleteInvoice = (id, fromDevice = false) => {
+  const sale = db.sales.find(s => s.id === id);
+  if (!sale) return;
+  if (!confirm(`¿Eliminar ${sale.number}? Se devolverá el stock y se retirará el cobro de caja.`)) return;
+  (sale.items || []).filter(i => i.type !== 'service' && i.productId).forEach(i => {
+    const p = db.products.find(x => x.id === i.productId);
+    if (p) p.stock = Number(p.stock || 0) + Number(i.qty || 0);
+  });
+  db.cash.movements = db.cash.movements.filter(m => m.saleId !== sale.id && !String(m.concept || '').includes(sale.number));
+  if (sale.source === 'repair' && sale.deviceId) {
+    const d = db.devices.find(x => x.id === sale.deviceId);
+    if (d) {
+      d.repairSaleId = '';
+      d.status = 'En reparación';
+      delete d.repairedAt; delete d.deliveredAt;
+    }
+  }
+  db.sales = db.sales.filter(s => s.id !== id);
+  save();
+  toast('Factura eliminada y movimientos revertidos');
+};
+
+function invoiceEmailText(s) {
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  const lines = (s.items || []).map(i => `${i.qty} x ${i.name} - ${money(Number(i.price)*Number(i.qty))}`).join('\n');
+  return `Hola ${s.clientName || ''},\n\nAdjuntamos el detalle de su comprobante ${s.number}.\n\n${lines}\n\nSubtotal sin IVA: ${money(s.subtotal)}\nIVA incluido (${s.taxRate || 0}%): ${money(s.tax)}\nTOTAL: ${money(s.total)}\n\nGracias por confiar en ${db.company.name || 'nuestro servicio'}.`;
+}
+
+async function sendInvoiceViaEmailJS(s) {
+  const toEmail = getClientEmail(s.clientId, s.clientEmail);
+  const cfg = db.company;
+  if (!toEmail || !cfg.emailjsServiceId || !cfg.emailjsTemplateId || !cfg.emailjsPublicKey || !window.emailjs) return false;
+  try {
+    window.emailjs.init({ publicKey: cfg.emailjsPublicKey });
+    await window.emailjs.send(cfg.emailjsServiceId, cfg.emailjsTemplateId, {
+      to_email: toEmail,
+      client_name: s.clientName || '',
+      invoice_number: s.number,
+      invoice_total: money(s.total),
+      company_name: cfg.name || 'Soporte360',
+      message: invoiceEmailText(s)
+    });
+    toast('Factura enviada por correo a ' + toEmail);
+    return true;
+  } catch (err) {
+    console.error('EmailJS:', err);
+    toast('No se pudo enviar automáticamente. Se abrirá el correo manual.');
+    return false;
+  }
+}
+
+window.sendInvoiceEmail = async id => {
+  const s = db.sales.find(x => x.id === id);
+  if (!s) return;
+  const toEmail = getClientEmail(s.clientId, s.clientEmail);
+  if (!toEmail) return toast('El cliente no tiene correo registrado');
+  if (await sendInvoiceViaEmailJS(s)) return;
+  const subject = encodeURIComponent(`${db.company.name || 'Soporte360'} - ${s.number}`);
+  const body = encodeURIComponent(invoiceEmailText(s));
+  window.location.href = `mailto:${encodeURIComponent(toEmail)}?subject=${subject}&body=${body}`;
+};
+
+async function autoSendInvoiceEmail(id) {
+  const s = db.sales.find(x => x.id === id);
+  if (!s) return;
+  const toEmail = getClientEmail(s.clientId, s.clientEmail);
+  if (!toEmail) return;
+  if (db.company.emailjsServiceId && db.company.emailjsTemplateId && db.company.emailjsPublicKey) {
+    await sendInvoiceViaEmailJS(s);
+  }
 }
 
 window.printInvoice = (id, format = 'a4') => {
@@ -886,7 +1052,7 @@ window.printInvoice = (id, format = 'a4') => {
           <div class="info-row"><span>CI / RUC</span><strong>${esc(s.clientCedula || '-')}</strong></div>
           <div class="info-row"><span>Cliente</span><strong>${esc(s.clientName || '-')}</strong></div>
           <div class="info-row"><span>Dirección</span><strong>${esc(c.address || '-')}</strong></div>
-          <div class="info-row"><span>Teléfono</span><strong>${esc(s.clientPhone || c.phone || '-')}</strong></div>
+          <div class="info-row"><span>Teléfono</span><strong>${esc(s.clientPhone || c.phone || '-')}</strong></div><div class="info-row"><span>Correo</span><strong>${esc(s.clientEmail || c.email || '-')}</strong></div>
         </div>
         <div class="pro-info-box issue-info">
           <div class="box-title">DATOS DEL COMPROBANTE</div>
@@ -1040,6 +1206,10 @@ function renderCompany() {
   document.getElementById('companyPhone').value = c.phone || '';
   document.getElementById('companyAddress').value = c.address || '';
   document.getElementById('companyEmail').value = c.email || '';
+  document.getElementById('companyTaxRate').value = c.taxRate ?? 15;
+  document.getElementById('emailjsServiceId').value = c.emailjsServiceId || '';
+  document.getElementById('emailjsTemplateId').value = c.emailjsTemplateId || '';
+  document.getElementById('emailjsPublicKey').value = c.emailjsPublicKey || '';
   document.getElementById('primaryColor').value = c.primary || '#2563eb';
   document.getElementById('secondaryColor').value = c.secondary || '#0f172a';
   renderLogoPreview(logoDraftUrl || c.logo || '');
@@ -1074,7 +1244,11 @@ document.getElementById('companyForm').onsubmit = async e => {
     legal: document.getElementById('companyLegal').value.trim(),
     phone: document.getElementById('companyPhone').value.trim(),
     address: document.getElementById('companyAddress').value.trim(),
-    email: document.getElementById('companyEmail').value.trim()
+    email: document.getElementById('companyEmail').value.trim(),
+    taxRate: Number(document.getElementById('companyTaxRate').value || 0),
+    emailjsServiceId: document.getElementById('emailjsServiceId').value.trim(),
+    emailjsTemplateId: document.getElementById('emailjsTemplateId').value.trim(),
+    emailjsPublicKey: document.getElementById('emailjsPublicKey').value.trim()
   });
   if (logoDraftUrl) db.company.logo = logoDraftUrl;
   logoDraftUrl = '';
@@ -1129,6 +1303,7 @@ function renderAll() {
   renderClients(document.getElementById('clientSearch')?.value || '');
   renderDevices(document.getElementById('deviceSearch')?.value || '');
   renderProducts(document.getElementById('productSearch')?.value || '');
+  renderInventory();
   renderInvoices();
   renderCompany();
   renderSaleCart();
