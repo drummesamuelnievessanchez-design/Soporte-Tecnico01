@@ -48,6 +48,14 @@ let cloudClient = null;
 let cloudUser = null;
 let cloudSyncChain = Promise.resolve();
 let cloudReady = false;
+let workspaceOwnerId = null;
+let cloudRole = 'owner';
+let cloudDisplayName = '';
+let currentMembership = null;
+let teamReady = false;
+let pendingInviteCode = '';
+
+const isOwner = () => cloudRole === 'owner';
 
 function cloudConfigIsValid() {
   const cfg = window.SUPABASE_CONFIG || {};
@@ -101,6 +109,62 @@ function hideAuthOverlay() {
   if (logout) logout.style.display = '';
 }
 
+
+async function resolveMembership(user, inviteCode = '') {
+  workspaceOwnerId = user.id;
+  cloudRole = 'owner';
+  cloudDisplayName = user.email || '';
+  currentMembership = null;
+  teamReady = false;
+
+  // Si todavía no se ejecutó la actualización SQL de trabajadores,
+  // la aplicación sigue funcionando en modo propietario como antes.
+  let memberResult = await cloudClient.from('app_members').select('user_id,owner_id,role,display_name,active').eq('user_id', user.id).maybeSingle();
+  if (memberResult.error) {
+    console.warn('Módulo de trabajadores no disponible todavía:', memberResult.error.message);
+    return;
+  }
+  teamReady = true;
+  let member = memberResult.data;
+
+  if (inviteCode) {
+    const { data, error } = await cloudClient.rpc('claim_worker_invite', { p_code: inviteCode.trim() });
+    if (error) throw new Error(error.message || 'No se pudo validar el código de trabajador.');
+    if (Array.isArray(data) && data.length) member = data[0];
+    else if (data && typeof data === 'object') member = data;
+    else {
+      const again = await cloudClient.from('app_members').select('user_id,owner_id,role,display_name,active').eq('user_id', user.id).maybeSingle();
+      if (again.error) throw again.error;
+      member = again.data;
+    }
+  }
+
+  if (!member) {
+    const payload = { user_id: user.id, owner_id: user.id, role: 'owner', display_name: user.email || 'Propietario', active: true };
+    const created = await cloudClient.from('app_members').insert(payload).select('user_id,owner_id,role,display_name,active').single();
+    if (created.error) throw created.error;
+    member = created.data;
+  }
+
+  if (member.active === false) throw new Error('Este acceso de trabajador está desactivado por el propietario.');
+  currentMembership = member;
+  workspaceOwnerId = member.owner_id || user.id;
+  cloudRole = member.role || 'owner';
+  cloudDisplayName = member.display_name || user.email || '';
+}
+
+function applyRoleAccess() {
+  const owner = isOwner();
+  document.querySelectorAll('.owner-only').forEach(el => el.style.display = owner ? '' : 'none');
+  const badge = document.getElementById('roleBadge');
+  if (badge) {
+    badge.textContent = owner ? '👑 Propietario' : `👷 Trabajador${cloudDisplayName ? ' · ' + cloudDisplayName : ''}`;
+    badge.className = 'role-badge ' + (owner ? 'owner' : 'worker');
+  }
+  const activeOwnerView = document.querySelector('.nav-item.active.owner-only');
+  if (!owner && activeOwnerView) showView('dashboard');
+}
+
 async function pushCloudSnapshot(snapshot, userId) {
   if (!cloudClient || !userId) return;
   setCloudStatus('syncing', '☁ Guardando…');
@@ -112,13 +176,13 @@ async function pushCloudSnapshot(snapshot, userId) {
     setCloudStatus('error', '☁ Error al guardar');
     return;
   }
-  if (cloudUser?.id === userId) setCloudStatus('online', '☁ Guardado');
+  if (cloudUser && (workspaceOwnerId || cloudUser.id) === userId) setCloudStatus('online', '☁ Guardado');
 }
 
 function queueCloudSync() {
   if (!cloudReady || !cloudUser || !cloudClient) return;
   const snapshot = clone(db);
-  const userId = cloudUser.id;
+  const userId = workspaceOwnerId || cloudUser.id;
   cloudSyncChain = cloudSyncChain
     .catch(() => {})
     .then(() => pushCloudSnapshot(snapshot, userId));
@@ -129,7 +193,7 @@ async function loadCloudState(user) {
   const { data, error } = await cloudClient
     .from('app_state')
     .select('data')
-    .eq('user_id', user.id)
+    .eq('user_id', workspaceOwnerId || user.id)
     .maybeSingle();
 
   if (error) throw error;
@@ -139,7 +203,7 @@ async function loadCloudState(user) {
     localStorage.setItem(DB_KEY, JSON.stringify(db));
   } else {
     // Primera conexión: migra automáticamente lo que ya estaba guardado en este navegador.
-    await pushCloudSnapshot(clone(db), user.id);
+    await pushCloudSnapshot(clone(db), workspaceOwnerId || user.id);
   }
 
   cloudReady = true;
@@ -147,20 +211,24 @@ async function loadCloudState(user) {
   setCloudStatus('online', '☁ Guardado');
 }
 
-async function activateCloudUser(user) {
-  if (!user || (cloudUser?.id === user.id && cloudReady)) return;
+async function activateCloudUser(user, inviteCode = '') {
+  if (!user) return;
+  if (cloudUser?.id === user.id && cloudReady && !inviteCode) return;
   cloudUser = user;
   cloudReady = false;
   hideAuthOverlay();
   try {
+    await resolveMembership(user, inviteCode || pendingInviteCode || '');
+    pendingInviteCode = '';
     await loadCloudState(user);
+    applyRoleAccess();
     setAuthMessage('');
   } catch (err) {
     console.error(err);
     cloudReady = false;
-    setCloudStatus('error', '☁ Error de nube');
+    setCloudStatus('error', '☁ Error de acceso');
     showAuthOverlay();
-    setAuthMessage('No se pudo cargar la base de datos. Revisa que hayas ejecutado supabase.sql y que la configuración sea correcta.', 'error');
+    setAuthMessage(err.message || 'No se pudo cargar la base de datos.', 'error');
   }
 }
 
@@ -184,7 +252,7 @@ async function initCloud() {
     const { data, error } = await cloudClient.auth.getSession();
     if (error) throw error;
     if (data.session?.user) {
-      await activateCloudUser(data.session.user);
+      await activateCloudUser(data.session.user, pendingInviteCode);
     } else {
       setCloudStatus('offline', '☁ Inicia sesión');
     }
@@ -197,7 +265,7 @@ async function initCloud() {
   cloudClient.auth.onAuthStateChange((event, session) => {
     setTimeout(async () => {
       if (session?.user) {
-        await activateCloudUser(session.user);
+        await activateCloudUser(session.user, pendingInviteCode);
       } else {
         cloudUser = null;
         cloudReady = false;
@@ -229,17 +297,28 @@ const viewMeta = {
   equipos: ['Equipos', 'Recepción, reparación y seguimiento técnico'],
   productos: ['Productos', 'Registro y edición de productos'],
   inventario: ['Inventario', 'Existencias, valoración y stock disponible'],
+  'inventario-equipos': ['Inventario de equipos', 'Historial y estado de máquinas ingresadas'],
   ventas: ['Ventas', 'Venta directa de productos'],
   facturas: ['Facturas', 'Historial de ventas y reparaciones'],
+  trabajadores: ['Trabajadores', 'Usuarios operativos y permisos'],
   configuracion: ['Configuración', 'Empresa, logo y colores']
 };
 
 function showView(v) {
+  const ownerOnlyViews = new Set(['productos','inventario','inventario-equipos','facturas','trabajadores','configuracion']);
+  if (!isOwner() && ownerOnlyViews.has(v)) {
+    toast('Este apartado es exclusivo del propietario');
+    v = 'dashboard';
+  }
   document.querySelectorAll('.nav-item').forEach(x => x.classList.toggle('active', x.dataset.view === v));
   document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
-  document.getElementById('view-' + v).classList.add('active');
+  const target = document.getElementById('view-' + v);
+  if (!target) return;
+  target.classList.add('active');
   document.getElementById('pageTitle').textContent = viewMeta[v][0];
   document.getElementById('pageSubtitle').textContent = viewMeta[v][1];
+  if (v === 'trabajadores') renderWorkers();
+  if (v === 'inventario-equipos') renderMachineInventory();
 }
 
 document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -374,8 +453,24 @@ document.getElementById('movementForm').onsubmit = e => {
   toast('Movimiento registrado');
 };
 
-function clientOptions(selected = '') {
-  return '<option value="">Seleccione...</option>' + db.clients.map(c => `<option value="${c.id}" ${c.id === selected ? 'selected' : ''}>${esc(c.cedula)} · ${esc(c.name)}</option>`).join('');
+function clientOptions(selected = '', filter = '') {
+  const q = String(filter || '').trim().toLowerCase();
+  const list = db.clients.filter(c => !q || [c.cedula, c.name, c.phone, c.email].join(' ').toLowerCase().includes(q));
+  return '<option value="">Seleccione...</option>' + list.map(c => `<option value="${c.id}" ${c.id === selected ? 'selected' : ''}>${esc(c.cedula)} · ${esc(c.name)}</option>`).join('');
+}
+
+function refreshClientSelector(selectId, searchId) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const selected = select.value || '';
+  const filter = document.getElementById(searchId)?.value || '';
+  select.innerHTML = clientOptions(selected, filter);
+  if (selected && db.clients.some(c => c.id === selected)) select.value = selected;
+}
+
+function refreshClientSelectors() {
+  refreshClientSelector('deviceClient', 'deviceClientSearch');
+  refreshClientSelector('saleClient', 'saleClientSearch');
 }
 
 function renderClients(filter = '') {
@@ -383,14 +478,12 @@ function renderClients(filter = '') {
   document.getElementById('clientsTable').innerHTML = db.clients.filter(c => [c.cedula, c.name, c.phone, c.email, c.address].join(' ').toLowerCase().includes(q)).map(c => `
     <tr><td>${esc(c.cedula)}</td><td><strong>${esc(c.name)}</strong></td><td>${esc(c.phone)}</td><td>${esc(c.email || '-')}</td><td>${esc(c.address)}</td><td><button class="mini" onclick="editClient('${c.id}')">Editar</button></td></tr>
   `).join('') || '<tr><td colspan="6" class="empty">No hay clientes.</td></tr>';
-
-  const deviceSelected = document.getElementById('deviceClient')?.value || '';
-  const saleSelected = document.getElementById('saleClient')?.value || '';
-  document.getElementById('deviceClient').innerHTML = clientOptions(deviceSelected);
-  document.getElementById('saleClient').innerHTML = clientOptions(saleSelected);
+  refreshClientSelectors();
 }
 
 document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
+document.getElementById('deviceClientSearch').oninput = () => refreshClientSelector('deviceClient','deviceClientSearch');
+document.getElementById('saleClientSearch').oninput = () => refreshClientSelector('saleClient','saleClientSearch');
 document.getElementById('clientForm').onsubmit = e => {
   e.preventDefault();
   const id = document.getElementById('clientId').value;
@@ -425,6 +518,20 @@ window.editClient = id => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
+function deviceTypeLabel(d) {
+  return d?.type === 'Otro' ? (d.customType || 'Otro') : (d?.type || '');
+}
+
+function toggleCustomDeviceType() {
+  const isOther = document.getElementById('deviceType').value === 'Otro';
+  const wrap = document.getElementById('deviceCustomTypeWrap');
+  wrap.classList.toggle('visible', isOther);
+  document.getElementById('deviceCustomType').required = isOther;
+  if (!isOther) document.getElementById('deviceCustomType').value = '';
+}
+document.getElementById('deviceType').onchange = toggleCustomDeviceType;
+toggleCustomDeviceType();
+
 function nextOrderNumber() {
   const nums = db.devices.map(d => Number(String(d.order || '').replace(/\D/g, '')) || 0);
   return 'OT-' + String(Math.max(0, ...nums) + 1).padStart(6, '0');
@@ -435,7 +542,7 @@ function renderDevices(filter = '') {
   const statusFilter = document.getElementById('deviceStatusFilter')?.value || 'all';
   const filtered = db.devices.filter(d => {
     const c = db.clients.find(x => x.id === d.clientId);
-    const matchesText = [d.order, c?.name, c?.cedula, d.type, d.brand, d.model, d.serial, d.damage, d.status].join(' ').toLowerCase().includes(q);
+    const matchesText = [d.order, c?.name, c?.cedula, d.type, d.customType, d.brand, d.model, d.serial, d.damage, d.status].join(' ').toLowerCase().includes(q);
     const matchesStatus = statusFilter === 'all' || (statusFilter === 'pending' ? !deviceIsRepaired(d) : d.status === statusFilter);
     return matchesText && matchesStatus;
   });
@@ -447,16 +554,16 @@ function renderDevices(filter = '') {
   document.getElementById('devicesTable').innerHTML = filtered.map(d => {
     const c = db.clients.find(x => x.id === d.clientId);
     const alreadyInvoiced = !!d.repairSaleId;
-    const invoiceButton = alreadyInvoiced ? `<button class="mini good-mini" onclick="printInvoice('${d.repairSaleId}')">Factura</button><button class="mini danger" onclick="deleteInvoice('${d.repairSaleId}', true)">Eliminar factura</button>` : `<button class="mini primary-mini" onclick="openRepair('${d.id}')">Reparar</button>`;
+    const invoiceButton = alreadyInvoiced ? `<button class="mini good-mini" onclick="printInvoice('${d.repairSaleId}')">Factura</button>${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${d.repairSaleId}', true)">Eliminar factura</button>` : ''}` : `<button class="mini primary-mini" onclick="openRepair('${d.id}')">Reparar</button>`;
     const deliveredButton = d.status === 'Reparado' ? `<button class="mini" onclick="markDelivered('${d.id}')">Entregado</button>` : '';
     return `<tr>
       <td><strong>${esc(d.order)}</strong><br><span class="muted">${esc(d.date || '')}</span></td>
       <td>${esc(c?.name || '')}</td>
-      <td>${esc(d.type)}<br><span class="muted">${esc(d.brand)} ${esc(d.model)}</span></td>
+      <td>${esc(deviceTypeLabel(d))}<br><span class="muted">${esc(d.brand)} ${esc(d.model)}</span></td>
       <td>${esc(d.serial || '-')}</td>
       <td>${esc(d.damage)}</td>
       <td><span class="status ${d.status === 'Reparado' || d.status === 'Entregado' ? 'good' : ''}">${esc(d.status)}</span></td>
-      <td><div class="action-row">${invoiceButton}${deliveredButton}<button class="mini" onclick="editDevice('${d.id}')">Editar</button><button class="mini" onclick="printWorkOrder('${d.id}')">Orden</button><button class="mini danger" onclick="deleteDevice('${d.id}')">Eliminar equipo</button></div></td>
+      <td><div class="action-row">${invoiceButton}${deliveredButton}<button class="mini" onclick="editDevice('${d.id}')">Editar</button><button class="mini" onclick="printWorkOrder('${d.id}')">Orden</button>${isOwner() ? `<button class="mini danger" onclick="deleteDevice('${d.id}')">Eliminar equipo</button>` : ''}</div></td>
     </tr>`;
   }).join('') || '<tr><td colspan="7" class="empty">No hay equipos.</td></tr>';
 
@@ -469,12 +576,14 @@ document.getElementById('deviceForm').onsubmit = e => {
   e.preventDefault();
   const id = document.getElementById('deviceId').value;
   const prev = db.devices.find(d => d.id === id);
+  if (document.getElementById('deviceType').value === 'Otro' && !document.getElementById('deviceCustomType').value.trim()) return toast('Escribe el nombre del otro equipo');
   const obj = {
     ...(prev || {}),
     id: id || uid('EQ'),
     order: prev?.order || nextOrderNumber(),
     clientId: document.getElementById('deviceClient').value,
     type: document.getElementById('deviceType').value,
+    customType: document.getElementById('deviceType').value === 'Otro' ? document.getElementById('deviceCustomType').value.trim() : '',
     brand: document.getElementById('deviceBrand').value.trim(),
     model: document.getElementById('deviceModel').value.trim(),
     serial: document.getElementById('deviceSerial').value.trim(),
@@ -486,6 +595,8 @@ document.getElementById('deviceForm').onsubmit = e => {
   if (id) db.devices = db.devices.map(d => d.id === id ? obj : d); else db.devices.push(obj);
   e.target.reset();
   document.getElementById('deviceId').value = '';
+  document.getElementById('deviceCustomType').value = '';
+  toggleCustomDeviceType();
   save();
   toast('Equipo guardado');
 };
@@ -498,6 +609,9 @@ window.editDevice = id => {
     deviceId: 'id', deviceClient: 'clientId', deviceType: 'type', deviceBrand: 'brand', deviceModel: 'model', deviceSerial: 'serial', deviceDamage: 'damage', deviceNotes: 'notes', deviceStatus: 'status'
   };
   Object.entries(map).forEach(([el, prop]) => document.getElementById(el).value = d[prop] ?? '');
+  document.getElementById('deviceClientSearch').value = '';
+  document.getElementById('deviceCustomType').value = d.customType || '';
+  toggleCustomDeviceType();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
@@ -511,6 +625,7 @@ window.markDelivered = id => {
 };
 
 window.deleteDevice = id => {
+  if (!isOwner()) return toast('Solo el propietario puede eliminar equipos');
   const d = db.devices.find(x => x.id === id);
   if (!d) return;
   if (d.repairSaleId) return toast('Primero elimina la factura de reparación vinculada.');
@@ -524,17 +639,24 @@ window.deleteDevice = id => {
 function renderRepairOrderOptions() {
   const select = document.getElementById('repairOrderSelect');
   const current = activeRepairDeviceId || select.value;
-  select.innerHTML = '<option value="">Seleccione una orden...</option>' + db.devices.slice().reverse().map(d => {
+  const q = (document.getElementById('repairOrderSearch')?.value || '').toLowerCase();
+  const rows = db.devices.slice().reverse().filter(d => {
+    const c = db.clients.find(x => x.id === d.clientId);
+    return !q || [d.order,c?.name,c?.cedula,deviceTypeLabel(d),d.brand,d.model,d.serial].join(' ').toLowerCase().includes(q);
+  });
+  select.innerHTML = '<option value="">Seleccione una orden...</option>' + rows.map(d => {
     const c = db.clients.find(x => x.id === d.clientId);
     const tag = d.repairSaleId ? ' · FACTURADA' : '';
-    return `<option value="${d.id}" ${d.id === current ? 'selected' : ''}>${esc(d.order)} · ${esc(c?.name || '')} · ${esc(d.brand)} ${esc(d.model)}${tag}</option>`;
+    return `<option value="${d.id}" ${d.id === current ? 'selected' : ''}>${esc(d.order)} · ${esc(c?.cedula || '')} · ${esc(c?.name || '')} · ${esc(deviceTypeLabel(d))}${tag}</option>`;
   }).join('');
+  if (current && db.devices.some(d => d.id === current)) select.value = current;
 }
 
 function renderRepairProducts() {
   const select = document.getElementById('repairProduct');
   const current = select.value;
-  select.innerHTML = '<option value="">Seleccione un producto...</option>' + db.products.filter(p => Number(p.stock) > 0).map(p => `<option value="${p.id}" ${p.id === current ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)} · ${money(p.price)} · Stock ${p.stock}</option>`).join('');
+  const q = (document.getElementById('repairProductSearch')?.value || '').toLowerCase();
+  select.innerHTML = '<option value="">Seleccione un producto...</option>' + db.products.filter(p => Number(p.stock) > 0 && (!q || [p.code,p.name,p.brand,p.category].join(' ').toLowerCase().includes(q))).map(p => `<option value="${p.id}" ${p.id === current ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)} · ${money(p.price)} · Stock ${p.stock}</option>`).join('');
   updateRepairProductPreview();
 }
 
@@ -547,6 +669,8 @@ function updateRepairProductPreview() {
 }
 
 document.getElementById('repairProduct').onchange = updateRepairProductPreview;
+document.getElementById('repairProductSearch').oninput = renderRepairProducts;
+document.getElementById('repairOrderSearch').oninput = renderRepairOrderOptions;
 
 document.getElementById('loadRepairOrderBtn').onclick = () => {
   const id = document.getElementById('repairOrderSelect').value;
@@ -601,7 +725,7 @@ function renderRepairWorkspace() {
   summary.innerHTML = `<div class="repair-summary-grid">
     <div class="repair-summary-item"><span>Orden</span><strong>${esc(d.order)}</strong></div>
     <div class="repair-summary-item"><span>Cliente</span><strong>${esc(c?.name || '')}</strong></div>
-    <div class="repair-summary-item"><span>Equipo</span><strong>${esc(d.type)} · ${esc(d.brand)} ${esc(d.model)}</strong></div>
+    <div class="repair-summary-item"><span>Equipo</span><strong>${esc(deviceTypeLabel(d))} · ${esc(d.brand)} ${esc(d.model)}</strong></div>
     <div class="repair-summary-item"><span>Daño</span><strong>${esc(d.damage)}</strong></div>
   </div>`;
 
@@ -733,7 +857,7 @@ window.printWorkOrder = id => {
   const body = `
     <div class="doc-head"><div>${logo}</div><div class="doc-company"><h1>${esc(db.company.name)}</h1><p>${esc(db.company.legal || '')}<br>RUC: ${esc(db.company.ruc || '-')} · Tel: ${esc(db.company.phone || '-')}<br>${esc(db.company.address || '')}</p></div><div class="doc-number"><span>ORDEN DE SERVICIO</span><strong>${esc(d.order)}</strong></div></div>
     <div class="doc-card-grid"><div class="doc-card"><span>CLIENTE</span><b>${esc(c?.name || '')}</b><small>${esc(c?.cedula || '')} · ${esc(c?.phone || '')}</small></div><div class="doc-card"><span>RECEPCIÓN</span><b>${esc(d.date || '')}</b><small>Estado: ${esc(d.status)}</small></div></div>
-    <div class="doc-section"><h3>Datos del equipo</h3><table><tbody><tr><th>Tipo</th><td>${esc(d.type)}</td><th>Marca</th><td>${esc(d.brand)}</td></tr><tr><th>Modelo</th><td>${esc(d.model)}</td><th>Serie</th><td>${esc(d.serial || '-')}</td></tr></tbody></table></div>
+    <div class="doc-section"><h3>Datos del equipo</h3><table><tbody><tr><th>Tipo</th><td>${esc(deviceTypeLabel(d))}</td><th>Marca</th><td>${esc(d.brand)}</td></tr><tr><th>Modelo</th><td>${esc(d.model)}</td><th>Serie</th><td>${esc(d.serial || '-')}</td></tr></tbody></table></div>
     <div class="doc-section"><h3>Daño reportado</h3><p>${esc(d.damage)}</p></div>
     <div class="doc-section"><h3>Observaciones</h3><p>${esc(d.notes || 'Sin observaciones.')}</p></div>
     <div class="signatures"><div>____________________________<br>Firma del cliente</div><div>____________________________<br>Recepción / técnico</div></div>
@@ -748,7 +872,8 @@ function renderProducts(filter = '') {
   `).join('') || '<tr><td colspan="7" class="empty">No hay productos.</td></tr>';
 
   const currentSale = document.getElementById('saleProduct')?.value || '';
-  document.getElementById('saleProduct').innerHTML = '<option value="">Seleccione...</option>' + db.products.filter(p => Number(p.stock) > 0).map(p => `<option value="${p.id}" ${p.id === currentSale ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)} · ${money(p.price)} · Stock ${p.stock}</option>`).join('');
+  const saleQ = (document.getElementById('saleProductSearch')?.value || '').toLowerCase();
+  document.getElementById('saleProduct').innerHTML = '<option value="">Seleccione...</option>' + db.products.filter(p => Number(p.stock) > 0 && (!saleQ || [p.code,p.name,p.brand,p.category].join(' ').toLowerCase().includes(saleQ))).map(p => `<option value="${p.id}" ${p.id === currentSale ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)} · ${money(p.price)} · Stock ${p.stock}</option>`).join('');
   renderRepairProducts();
 }
 
@@ -780,12 +905,16 @@ document.getElementById('inventorySearch').oninput = renderInventory;
 document.getElementById('inventoryFilter').onchange = renderInventory;
 
 document.getElementById('productSearch').oninput = e => renderProducts(e.target.value);
+document.getElementById('saleProductSearch').oninput = () => renderProducts(document.getElementById('productSearch').value || '');
 document.getElementById('productForm').onsubmit = e => {
   e.preventDefault();
   const id = document.getElementById('productId').value;
+  const code = document.getElementById('productCode').value.trim();
+  const duplicateCode = db.products.find(p => p.id !== id && String(p.code || '').trim().toLowerCase() === code.toLowerCase());
+  if (duplicateCode) return toast(`El código ${code} ya está registrado en ${duplicateCode.name}`);
   const obj = {
     id: id || uid('PROD'),
-    code: document.getElementById('productCode').value.trim(),
+    code,
     name: document.getElementById('productName').value.trim(),
     category: document.getElementById('productCategory').value.trim(),
     brand: document.getElementById('productBrand').value.trim(),
@@ -906,12 +1035,13 @@ function renderInvoices() {
       <td>${esc(s.clientName)}</td>
       <td>${esc(s.payment)}</td>
       <td><strong>${money(s.total)}</strong></td>
-      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Correo</button><button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button></div></td>
+      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Correo</button>${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button>` : ''}</div></td>
     </tr>
   `).join('') || '<tr><td colspan="8" class="empty">No hay facturas.</td></tr>';
 }
 
 window.deleteInvoice = (id, fromDevice = false) => {
+  if (!isOwner()) return toast('Solo el propietario puede eliminar facturas');
   const sale = db.sales.find(s => s.id === id);
   if (!sale) return;
   if (!confirm(`¿Eliminar ${sale.number}? Se devolverá el stock y se retirará el cobro de caja.`)) return;
@@ -1000,7 +1130,7 @@ window.printInvoice = (id, format = 'a4') => {
   const repairBlock = s.source === 'repair' && d ? `
     <section class="repair-strip">
       <div><span>Orden de trabajo</span><strong>${esc(s.order || d.order)}</strong></div>
-      <div><span>Equipo</span><strong>${esc(d.type)} · ${esc(d.brand)} ${esc(d.model)}</strong></div>
+      <div><span>Equipo</span><strong>${esc(deviceTypeLabel(d))} · ${esc(d.brand)} ${esc(d.model)}</strong></div>
       <div><span>N.º de serie</span><strong>${esc(d.serial || '-')}</strong></div>
       <div><span>Estado</span><strong>REPARADO</strong></div>
     </section>` : '';
@@ -1009,7 +1139,7 @@ window.printInvoice = (id, format = 'a4') => {
     const ticketItems = (s.items || []).map(i => `
       <tr><td>${Number(i.qty)}</td><td>${esc(i.name)}</td><td>${money(i.price)}</td><td>${money(Number(i.price) * Number(i.qty))}</td></tr>
     `).join('');
-    const ticketRepair = s.source === 'repair' && d ? `<div class="ticket-lines"><div><b>Orden:</b> ${esc(s.order || d.order)}</div><div><b>Equipo:</b> ${esc(d.type)} ${esc(d.brand)} ${esc(d.model)}</div><div><b>Serie:</b> ${esc(d.serial || '-')}</div></div>` : '';
+    const ticketRepair = s.source === 'repair' && d ? `<div class="ticket-lines"><div><b>Orden:</b> ${esc(s.order || d.order)}</div><div><b>Equipo:</b> ${esc(deviceTypeLabel(d))} ${esc(d.brand)} ${esc(d.model)}</div><div><b>Serie:</b> ${esc(d.serial || '-')}</div></div>` : '';
     const ticketBody = `
       <div class="ticket-sheet">
         <header class="ticket-header">${ticketLogo}<h1>${esc(companyName)}</h1>${db.company.legal ? `<div>${esc(db.company.legal)}</div>` : ''}<div>${esc(db.company.address || '')}</div><div>RUC: ${esc(db.company.ruc || '-')}</div><div>Tel: ${esc(db.company.phone || '-')}</div></header>
@@ -1073,7 +1203,7 @@ window.printInvoice = (id, format = 'a4') => {
       <section class="pro-bottom">
         <div class="pro-observations">
           <div class="box-title">OBSERVACIONES</div>
-          <p>${s.source === 'repair' && d ? `Servicio correspondiente a la orden ${esc(s.order || d.order)}. Equipo: ${esc(d.type)} ${esc(d.brand)} ${esc(d.model)}.` : 'Venta de productos registrada en el sistema.'}</p>
+          <p>${s.source === 'repair' && d ? `Servicio correspondiente a la orden ${esc(s.order || d.order)}. Equipo: ${esc(deviceTypeLabel(d))} ${esc(d.brand)} ${esc(d.model)}.` : 'Venta de productos registrada en el sistema.'}</p>
           <div class="thanks-message"><strong>Gracias por confiar en ${esc(companyName)}.</strong><br>Conserve este comprobante para futuras consultas.</div>
         </div>
         <div class="pro-totals">
@@ -1238,6 +1368,7 @@ document.getElementById('companyLogo').onchange = async e => {
 
 document.getElementById('companyForm').onsubmit = async e => {
   e.preventDefault();
+  if (!isOwner()) return toast('Solo el propietario puede modificar la configuración');
   Object.assign(db.company, {
     ruc: document.getElementById('companyRuc').value.trim(),
     name: document.getElementById('companyName').value.trim(),
@@ -1258,6 +1389,7 @@ document.getElementById('companyForm').onsubmit = async e => {
 };
 
 document.getElementById('applyColorsBtn').onclick = () => {
+  if (!isOwner()) return toast('Solo el propietario puede modificar la configuración');
   db.company.primary = document.getElementById('primaryColor').value;
   db.company.secondary = document.getElementById('secondaryColor').value;
   save();
@@ -1265,6 +1397,7 @@ document.getElementById('applyColorsBtn').onclick = () => {
 };
 
 document.getElementById('resetDataBtn').onclick = () => {
+  if (!isOwner()) return toast('Solo el propietario puede restablecer datos');
   if (!confirm('Esto borrará toda la información guardada en este navegador. ¿Continuar?')) return;
   db = clone(defaults);
   saleCart = [];
@@ -1296,6 +1429,112 @@ document.getElementById('companyLogoPreview').onclick = openLogoModal;
 document.querySelectorAll('[data-close-logo]').forEach(el => el.onclick = closeLogoModal);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLogoModal(); });
 
+
+function renderMachineInventory() {
+  const table = document.getElementById('machineInventoryTable');
+  if (!table) return;
+  const q = (document.getElementById('machineInventorySearch')?.value || '').toLowerCase();
+  const filter = document.getElementById('machineInventoryFilter')?.value || 'all';
+  const rows = db.devices.filter(d => {
+    const c = db.clients.find(x => x.id === d.clientId);
+    const text = [d.order,c?.name,c?.cedula,deviceTypeLabel(d),d.brand,d.model,d.serial,d.status,d.damage].join(' ').toLowerCase();
+    const statusOk = filter === 'all' || (filter === 'pending' ? !deviceIsRepaired(d) : d.status === filter);
+    return (!q || text.includes(q)) && statusOk;
+  });
+  document.getElementById('machineInvTotal').textContent = db.devices.length;
+  document.getElementById('machineInvPending').textContent = db.devices.filter(d => !deviceIsRepaired(d)).length;
+  document.getElementById('machineInvRepaired').textContent = db.devices.filter(d => d.status === 'Reparado').length;
+  document.getElementById('machineInvDelivered').textContent = db.devices.filter(d => d.status === 'Entregado').length;
+  table.innerHTML = rows.slice().reverse().map(d => {
+    const c = db.clients.find(x => x.id === d.clientId);
+    const cls = d.status === 'Entregado' || d.status === 'Reparado' ? 'good' : 'warn';
+    return `<tr><td><strong>${esc(d.order)}</strong></td><td>${esc(c?.name || '-')}</td><td>${esc(c?.cedula || '-')}</td><td>${esc(deviceTypeLabel(d))}</td><td>${esc(d.brand || '-')} ${esc(d.model || '')}</td><td>${esc(d.serial || '-')}</td><td>${esc(d.date || '-')}</td><td><span class="status ${cls}">${esc(d.status || '')}</span></td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="empty">No hay equipos para mostrar.</td></tr>';
+}
+
+document.getElementById('machineInventorySearch').oninput = renderMachineInventory;
+document.getElementById('machineInventoryFilter').onchange = renderMachineInventory;
+
+function generateWorkerCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = 'TRAB-';
+  for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+async function renderWorkers() {
+  const tbody = document.getElementById('workersTable');
+  const warning = document.getElementById('teamSetupWarning');
+  if (!tbody || !isOwner()) return;
+  if (!cloudClient || !cloudUser || !teamReady) {
+    warning.style.display = 'block';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Ejecuta la actualización SQL para habilitar trabajadores.</td></tr>';
+    return;
+  }
+  warning.style.display = 'none';
+  tbody.innerHTML = '<tr><td colspan="5" class="empty">Cargando trabajadores…</td></tr>';
+  try {
+    const [membersRes, invitesRes] = await Promise.all([
+      cloudClient.from('app_members').select('user_id,owner_id,role,display_name,active,created_at').eq('owner_id', workspaceOwnerId).order('created_at', { ascending: false }),
+      cloudClient.from('worker_invites').select('id,owner_id,name,email,invite_code,active,claimed_by,created_at').eq('owner_id', workspaceOwnerId).order('created_at', { ascending: false })
+    ]);
+    if (membersRes.error) throw membersRes.error;
+    if (invitesRes.error) throw invitesRes.error;
+    const workers = (membersRes.data || []).filter(m => m.role === 'worker');
+    const pending = (invitesRes.data || []).filter(i => i.active && !i.claimed_by);
+    const rows = [];
+    workers.forEach(m => rows.push(`<tr><td><strong>${esc(m.display_name || 'Trabajador')}</strong></td><td class="muted">Cuenta vinculada</td><td><span class="status">Trabajador</span></td><td><span class="status ${m.active ? 'good' : 'bad'}">${m.active ? 'Activo' : 'Desactivado'}</span></td><td><button class="mini ${m.active ? 'danger' : 'good-mini'}" onclick="toggleWorkerAccess('${m.user_id}',${m.active ? 'false' : 'true'})">${m.active ? 'Desactivar' : 'Reactivar'}</button></td></tr>`));
+    pending.forEach(i => rows.push(`<tr><td><strong>${esc(i.name)}</strong></td><td>${esc(i.email)}</td><td><span class="status warn">Invitación</span></td><td><span class="worker-code">${esc(i.invite_code)}</span></td><td><div class="action-row"><button class="mini" onclick="copyWorkerCode('${esc(i.invite_code)}')">Copiar código</button><button class="mini danger" onclick="deleteWorkerInvite('${i.id}')">Eliminar</button></div></td></tr>`));
+    tbody.innerHTML = rows.join('') || '<tr><td colspan="5" class="empty">No hay trabajadores ni invitaciones.</td></tr>';
+  } catch (err) {
+    console.error(err);
+    warning.style.display = 'block';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No se pudo cargar el módulo de trabajadores.</td></tr>';
+  }
+}
+
+document.getElementById('workerInviteForm').onsubmit = async e => {
+  e.preventDefault();
+  if (!isOwner()) return toast('Solo el propietario puede registrar trabajadores');
+  if (!teamReady) return toast('Primero ejecuta la actualización SQL de trabajadores');
+  const name = document.getElementById('workerName').value.trim();
+  const email = document.getElementById('workerEmail').value.trim().toLowerCase();
+  if (!name || !email) return toast('Completa nombre y correo');
+  const code = generateWorkerCode();
+  const { error } = await cloudClient.from('worker_invites').insert({ owner_id: workspaceOwnerId, name, email, invite_code: code, active: true });
+  if (error) {
+    console.error(error);
+    return toast(error.message?.includes('duplicate') ? 'Ya existe una invitación para ese correo o código' : 'No se pudo crear la invitación');
+  }
+  e.target.reset();
+  await renderWorkers();
+  toast('Trabajador registrado. Código: ' + code);
+};
+
+document.getElementById('refreshWorkersBtn').onclick = renderWorkers;
+
+window.copyWorkerCode = async code => {
+  try { await navigator.clipboard.writeText(code); toast('Código copiado'); }
+  catch { prompt('Copia este código:', code); }
+};
+
+window.deleteWorkerInvite = async id => {
+  if (!isOwner()) return;
+  if (!confirm('¿Eliminar esta invitación?')) return;
+  const { error } = await cloudClient.from('worker_invites').delete().eq('id', id).eq('owner_id', workspaceOwnerId);
+  if (error) return toast('No se pudo eliminar la invitación');
+  await renderWorkers();
+  toast('Invitación eliminada');
+};
+
+window.toggleWorkerAccess = async (userId, active) => {
+  if (!isOwner()) return;
+  const { error } = await cloudClient.from('app_members').update({ active: Boolean(active) }).eq('user_id', userId).eq('owner_id', workspaceOwnerId);
+  if (error) return toast('No se pudo cambiar el acceso');
+  await renderWorkers();
+  toast(active ? 'Trabajador reactivado' : 'Trabajador desactivado');
+};
+
 function renderAll() {
   applyTheme();
   renderDashboard();
@@ -1304,10 +1543,12 @@ function renderAll() {
   renderDevices(document.getElementById('deviceSearch')?.value || '');
   renderProducts(document.getElementById('productSearch')?.value || '');
   renderInventory();
+  renderMachineInventory();
   renderInvoices();
   renderCompany();
   renderSaleCart();
   renderRepairWorkspace();
+  applyRoleAccess();
 }
 
 renderAll();
@@ -1318,12 +1559,13 @@ document.getElementById('authForm').onsubmit = async e => {
   if (!cloudClient) return;
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
+  pendingInviteCode = document.getElementById('authInviteCode').value.trim();
   setAuthMessage('Iniciando sesión…');
   const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
   if (error) return setAuthMessage(error.message || 'No se pudo iniciar sesión.', 'error');
   if (data.user) {
     setAuthMessage('Sesión iniciada.', 'success');
-    await activateCloudUser(data.user);
+    await activateCloudUser(data.user, pendingInviteCode);
   }
 };
 
@@ -1331,13 +1573,14 @@ document.getElementById('signupBtn').onclick = async () => {
   if (!cloudClient) return;
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
+  pendingInviteCode = document.getElementById('authInviteCode').value.trim();
   if (!email || password.length < 6) return setAuthMessage('Escribe un correo válido y una contraseña de al menos 6 caracteres.', 'error');
   setAuthMessage('Creando cuenta…');
   const { data, error } = await cloudClient.auth.signUp({ email, password });
   if (error) return setAuthMessage(error.message || 'No se pudo crear la cuenta.', 'error');
   if (data.session?.user) {
     setAuthMessage('Cuenta creada correctamente.', 'success');
-    await activateCloudUser(data.session.user);
+    await activateCloudUser(data.session.user, pendingInviteCode);
   } else {
     setAuthMessage('Cuenta creada. Revisa tu correo para confirmar la cuenta y después inicia sesión.', 'success');
   }
@@ -1350,6 +1593,7 @@ document.getElementById('logoutBtn').onclick = async () => {
   if (error) return toast('No se pudo cerrar sesión');
   cloudUser = null;
   cloudReady = false;
+  workspaceOwnerId = null; cloudRole = 'owner'; cloudDisplayName = ''; currentMembership = null;
   showAuthOverlay();
   setCloudStatus('offline', '☁ Inicia sesión');
 };

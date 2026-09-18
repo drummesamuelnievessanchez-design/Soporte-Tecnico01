@@ -23,11 +23,13 @@
         <button class="nav-item" data-view="caja"><span class="nav-icon">💵</span><span class="nav-label">Caja</span></button>
         <button class="nav-item" data-view="clientes"><span class="nav-icon">👥</span><span class="nav-label">Clientes</span></button>
         <button class="nav-item" data-view="equipos"><span class="nav-icon">🛠️</span><span class="nav-label">Equipos</span></button>
-        <button class="nav-item" data-view="productos"><span class="nav-icon">📦</span><span class="nav-label">Productos</span></button>
-        <button class="nav-item" data-view="inventario"><span class="nav-icon">📊</span><span class="nav-label">Inventario</span></button>
+        <button class="nav-item owner-only" data-view="productos"><span class="nav-icon">📦</span><span class="nav-label">Productos</span></button>
+        <button class="nav-item owner-only" data-view="inventario"><span class="nav-icon">📊</span><span class="nav-label">Inventario</span></button>
+        <button class="nav-item owner-only" data-view="inventario-equipos"><span class="nav-icon">🗂️</span><span class="nav-label">Inventario equipos</span></button>
         <button class="nav-item" data-view="ventas"><span class="nav-icon">🧾</span><span class="nav-label">Ventas</span></button>
-        <button class="nav-item" data-view="facturas"><span class="nav-icon">📄</span><span class="nav-label">Facturas</span></button>
-        <button class="nav-item" data-view="configuracion"><span class="nav-icon">⚙️</span><span class="nav-label">Configuración</span></button>
+        <button class="nav-item owner-only" data-view="facturas"><span class="nav-icon">📄</span><span class="nav-label">Facturas</span></button>
+        <button class="nav-item owner-only" data-view="trabajadores"><span class="nav-icon">👷</span><span class="nav-label">Trabajadores</span></button>
+        <button class="nav-item owner-only" data-view="configuracion"><span class="nav-icon">⚙️</span><span class="nav-label">Configuración</span></button>
       </nav>
 
       <div class="sidebar-footer">
@@ -43,6 +45,7 @@
         </div>
         <div class="top-actions">
           <span id="cloudStatus" class="cloud-status offline">☁ Sin conexión</span>
+          <span id="roleBadge" class="role-badge">Propietario</span>
           <span id="todayLabel"></span>
           <button class="btn ghost" id="quickOpenCash">Abrir caja</button>
           <button class="btn ghost" id="logoutBtn" type="button" style="display:none">Cerrar sesión</button>
@@ -124,8 +127,10 @@
             <div class="panel-head"><h3>Registrar equipo</h3></div>
             <form id="deviceForm" class="form-grid">
               <input type="hidden" id="deviceId">
+              <label class="full">Buscar cliente<input id="deviceClientSearch" class="search-select-input" placeholder="Escriba nombre o cédula para filtrar"></label>
               <label class="full">Cliente<select id="deviceClient" required></select></label>
               <label>Tipo<select id="deviceType"><option>Computadora</option><option>Laptop</option><option>Impresora</option><option>PlayStation</option><option>Xbox</option><option>Nintendo Switch</option><option>Celular</option><option>Tablet</option><option>Monitor</option><option>Router</option><option>Otro</option></select></label>
+              <label id="deviceCustomTypeWrap" class="hidden-field">Nombre del otro equipo<input id="deviceCustomType" placeholder="Ej. Cámara, DVR, NVR, UPS"></label>
               <label>Marca<input id="deviceBrand" required></label>
               <label>Modelo<input id="deviceModel" required></label>
               <label>Serie<input id="deviceSerial"></label>
@@ -160,7 +165,8 @@
             <span class="status warn" id="repairStatusLabel">Seleccione una orden</span>
           </div>
 
-          <div class="repair-order-picker">
+          <div class="repair-order-picker repair-order-search-grid">
+            <label>Buscar orden / cliente<input id="repairOrderSearch" class="search-select-input" placeholder="Orden, nombre o cédula"></label>
             <label>Orden de trabajo<select id="repairOrderSelect"></select></label>
             <button type="button" class="btn ghost" id="loadRepairOrderBtn">Cargar orden</button>
           </div>
@@ -171,6 +177,7 @@
             <div class="repair-column">
               <h4>Repuestos / productos utilizados</h4>
               <div class="form-grid compact-grid">
+                <label class="full">Buscar producto<input id="repairProductSearch" class="search-select-input" placeholder="Código, nombre o marca"></label>
                 <label class="full">Producto<select id="repairProduct"></select></label>
                 <label>Cantidad<input id="repairQty" type="number" min="1" value="1"></label>
                 <button class="btn secondary repair-add-btn" id="addRepairProductBtn" type="button">+ Añadir repuesto</button>
@@ -243,12 +250,30 @@
         </article>
       </section>
 
+      <section id="view-inventario-equipos" class="view owner-section">
+        <div class="inventory-stats">
+          <article class="stat-card"><span>Total de equipos</span><strong id="machineInvTotal">0</strong><small>Órdenes registradas</small></article>
+          <article class="stat-card"><span>Pendientes</span><strong id="machineInvPending">0</strong><small>Sin finalizar</small></article>
+          <article class="stat-card"><span>Reparados</span><strong id="machineInvRepaired">0</strong><small>Listos / reparados</small></article>
+          <article class="stat-card"><span>Entregados</span><strong id="machineInvDelivered">0</strong><small>Entregados al cliente</small></article>
+        </div>
+        <article class="panel">
+          <div class="panel-head inventory-head">
+            <div><h3>Inventario de equipos / máquinas</h3><p>Consulta todos los equipos que han ingresado al taller y su estado actual.</p></div>
+            <div class="inventory-filters"><input id="machineInventorySearch" class="search" placeholder="Buscar orden, cliente, cédula, tipo, marca, modelo o serie"><select id="machineInventoryFilter"><option value="all">Todos</option><option value="pending">Pendientes</option><option value="Reparado">Reparados</option><option value="Entregado">Entregados</option></select></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Orden</th><th>Cliente</th><th>Cédula/RUC</th><th>Equipo</th><th>Marca / modelo</th><th>Serie</th><th>Ingreso</th><th>Estado</th></tr></thead><tbody id="machineInventoryTable"></tbody></table></div>
+        </article>
+      </section>
+
       <section id="view-ventas" class="view">
         <div class="grid-2 align-start sales-layout">
           <article class="panel">
             <div class="panel-head"><div><h3>Nueva venta de productos</h3><p>Este módulo es únicamente para productos vendidos en mostrador.</p></div></div>
             <div class="form-grid">
+              <label class="full">Buscar cliente<input id="saleClientSearch" class="search-select-input" placeholder="Escriba nombre o cédula para filtrar"></label>
               <label class="full">Cliente<select id="saleClient"></select></label>
+              <label>Buscar producto<input id="saleProductSearch" class="search-select-input" placeholder="Código, nombre o marca"></label>
               <label>Producto<select id="saleProduct"></select></label>
               <label>Cantidad<input id="saleQty" type="number" min="1" value="1"></label>
               <button class="btn secondary full" id="addProductBtn" type="button">+ Agregar producto</button>
@@ -272,6 +297,31 @@
         <article class="panel">
           <div class="panel-head"><div><h3>Historial de facturas</h3><p>Ventas de productos y reparaciones finalizadas.</p></div></div>
           <div class="table-wrap"><table><thead><tr><th>Número</th><th>Tipo</th><th>Orden</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Total</th><th></th></tr></thead><tbody id="invoicesTable"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="view-trabajadores" class="view owner-section">
+        <div class="grid-2 align-start">
+          <article class="panel">
+            <div class="panel-head"><div><h3>Registrar trabajador</h3><p>El trabajador tendrá acceso operativo, pero no a configuración ni funciones administrativas.</p></div></div>
+            <form id="workerInviteForm" class="form-grid">
+              <label>Nombre completo<input id="workerName" required placeholder="Nombre del trabajador"></label>
+              <label>Correo electrónico<input id="workerEmail" type="email" required placeholder="trabajador@correo.com"></label>
+              <button class="btn primary full" type="submit">Crear acceso de trabajador</button>
+            </form>
+            <div class="info-note"><strong>Permisos del trabajador:</strong> Inicio, Caja, Clientes, Equipos y Ventas. No podrá abrir Productos, Inventarios, Facturas, Trabajadores ni Configuración, ni eliminar equipos o facturas.</div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Cómo entra un trabajador</h3></div>
+            <div class="worker-help">
+              <p>1. Registra aquí su nombre y correo.</p><p>2. El sistema genera un código de invitación.</p><p>3. El trabajador crea su cuenta con ese mismo correo.</p><p>4. En el inicio de sesión escribe el código una sola vez.</p>
+            </div>
+          </article>
+        </div>
+        <article class="panel">
+          <div class="panel-head"><h3>Invitaciones y trabajadores</h3><button id="refreshWorkersBtn" class="btn ghost" type="button">Actualizar</button></div>
+          <div id="teamSetupWarning" class="cloud-warning" style="display:none"><strong>Falta actualizar Supabase</strong><p>Ejecuta el archivo <code>ACTUALIZAR_SUPABASE_TRABAJADORES.sql</code> en SQL Editor para activar usuarios trabajadores.</p></div>
+          <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Código / Estado</th><th>Acciones</th></tr></thead><tbody id="workersTable"></tbody></table></div>
         </article>
       </section>
 
@@ -349,11 +399,12 @@
       <form id="authForm" class="auth-form">
         <label>Correo electrónico<input id="authEmail" type="email" autocomplete="email" required placeholder="correo@ejemplo.com"></label>
         <label>Contraseña<input id="authPassword" type="password" autocomplete="current-password" required minlength="6" placeholder="Mínimo 6 caracteres"></label>
+        <label>Código de trabajador <span class="optional-text">(solo si te invitaron)</span><input id="authInviteCode" autocomplete="one-time-code" placeholder="Ej. TRAB-A1B2C3"></label>
         <button id="loginBtn" class="btn primary" type="submit">Iniciar sesión</button>
         <button id="signupBtn" class="btn secondary" type="button">Crear cuenta</button>
       </form>
       <div id="authMessage" class="auth-message"></div>
-      <p class="auth-note">Los datos se sincronizan con la nube. En el primer inicio de sesión, si este navegador ya tenía información local, se copiará automáticamente a tu cuenta.</p>
+      <p class="auth-note">Los datos se sincronizan con la nube. Si eres trabajador, usa el mismo correo de la invitación y escribe el código la primera vez que inicies sesión.</p>
     </div>
   </div>
 
