@@ -16,7 +16,8 @@ const defaults = {
   clients: [],
   devices: [],
   products: [],
-  sales: []
+  sales: [],
+  proformas: []
 };
 
 function load() {
@@ -30,7 +31,8 @@ function load() {
       clients: Array.isArray(raw.clients) ? raw.clients : [],
       devices: Array.isArray(raw.devices) ? raw.devices : [],
       products: Array.isArray(raw.products) ? raw.products : [],
-      sales: Array.isArray(raw.sales) ? raw.sales : []
+      sales: Array.isArray(raw.sales) ? raw.sales : [],
+      proformas: Array.isArray(raw.proformas) ? raw.proformas : []
     };
   } catch (e) {
     return clone(defaults);
@@ -40,7 +42,9 @@ function load() {
 let db = load();
 let saleCart = [];
 let repairCart = [];
+let proformaCart = [];
 let activeRepairDeviceId = '';
+let activeProformaForSaleId = '';
 let logoDraftUrl = '';
 
 // ===== SINCRONIZACIÓN EN LA NUBE (SUPABASE) =====
@@ -74,7 +78,8 @@ function normalizeDb(raw = {}) {
     clients: Array.isArray((raw || {}).clients) ? (raw || {}).clients : [],
     devices: Array.isArray((raw || {}).devices) ? (raw || {}).devices : [],
     products: Array.isArray((raw || {}).products) ? (raw || {}).products : [],
-    sales: Array.isArray((raw || {}).sales) ? (raw || {}).sales : []
+    sales: Array.isArray((raw || {}).sales) ? (raw || {}).sales : [],
+    proformas: Array.isArray((raw || {}).proformas) ? (raw || {}).proformas : []
   };
 }
 
@@ -248,6 +253,8 @@ const viewMeta = {
   inventario: ['Inventario', 'Existencias, valoración y stock disponible'],
   'inventario-equipos': ['Inventario de equipos', 'Historial y estado de máquinas ingresadas'],
   ventas: ['Ventas', 'Venta directa de productos'],
+  proformas: ['Proformas', 'Cotizaciones sin afectar stock ni caja'],
+  'cuentas-cobrar': ['Cuentas por cobrar', 'Abonos y saldos pendientes'],
   facturas: ['Facturas', 'Historial de ventas y reparaciones'],
   configuracion: ['Configuración', 'Empresa, logo y colores']
 };
@@ -266,6 +273,11 @@ function showView(v) {
     renderRepairProducts();
     renderRepairWorkspace();
   }
+  if (v === 'proformas') {
+    renderProformaCart();
+    renderProformas();
+  }
+  if (v === 'cuentas-cobrar') renderReceivables();
 }
 
 document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => showView(b.dataset.view));
@@ -299,6 +311,85 @@ function isSaleToday(s) {
 
 function saleTypeLabel(s) {
   return s.source === 'repair' ? 'Reparación' : 'Venta';
+}
+
+
+function salePaidAmount(s) {
+  if (!s) return 0;
+  const stored = Number(s.amountPaid);
+  if (Number.isFinite(stored)) return Math.max(0, stored);
+  if (Array.isArray(s.payments) && s.payments.length) {
+    return Math.max(0, s.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0));
+  }
+  // Compatibilidad: las facturas anteriores a V13 se consideran pagadas.
+  return Math.max(0, Number(s.total || 0));
+}
+
+function saleBalanceAmount(s) {
+  return Math.max(0, Number(s?.total || 0) - salePaidAmount(s));
+}
+
+function salePaymentStatus(s) {
+  return saleBalanceAmount(s) > 0.004 ? 'Pendiente' : 'Pagado';
+}
+
+function salePaymentLabel(s) {
+  const methods = Array.isArray(s?.payments) ? [...new Set(s.payments.map(p => p.method).filter(Boolean))] : [];
+  if (methods.length) return methods.join(' + ');
+  return s?.payment || '-';
+}
+
+function saleCollectedToday(s) {
+  if (Array.isArray(s?.payments) && s.payments.length) {
+    return s.payments.filter(p => p.dateKey === today()).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  }
+  // Compatibilidad con comprobantes creados antes de V13.
+  return isSaleToday(s) ? salePaidAmount(s) : 0;
+}
+
+function makePaymentRecord(amount, method, note = '') {
+  return {
+    id: uid('ABO'),
+    date: now(),
+    dateKey: today(),
+    amount: Number(amount || 0),
+    method: method || 'Efectivo',
+    note
+  };
+}
+
+function setCheckoutPaymentUi(prefix, total) {
+  const mode = document.getElementById(prefix + 'PaymentMode');
+  const amount = document.getElementById(prefix + 'AmountPaid');
+  const hint = document.getElementById(prefix + 'PaymentHint');
+  if (!mode || !amount || !hint) return;
+  total = Math.max(0, Number(total || 0));
+  if (mode.value === 'full') {
+    amount.disabled = true;
+    amount.value = total.toFixed(2);
+  } else {
+    amount.disabled = false;
+    const current = Number(amount.value || 0);
+    if (current > total) amount.value = total.toFixed(2);
+  }
+  const paid = mode.value === 'full' ? total : Math.max(0, Number(amount.value || 0));
+  const balance = Math.max(0, total - paid);
+  hint.innerHTML = mode.value === 'full'
+    ? `Se registrará <strong>${money(total)}</strong> en caja y la factura quedará pagada.`
+    : `Abono: <strong>${money(paid)}</strong> · Saldo pendiente: <strong>${money(balance)}</strong>`;
+}
+
+function getCheckoutPayment(prefix, total) {
+  const mode = document.getElementById(prefix + 'PaymentMode')?.value || 'full';
+  const amountEl = document.getElementById(prefix + 'AmountPaid');
+  const paid = mode === 'full' ? Number(total || 0) : Number(amountEl?.value || 0);
+  if (!Number.isFinite(paid) || paid < 0) return { error: 'Ingrese un monto recibido válido' };
+  if (paid > Number(total || 0) + 0.004) return { error: 'El monto recibido no puede superar el total' };
+  return {
+    paid: Math.max(0, paid),
+    balance: Math.max(0, Number(total || 0) - paid),
+    status: Math.max(0, Number(total || 0) - paid) > 0.004 ? 'Pendiente' : 'Pagado'
+  };
 }
 
 function currentTaxRate() {
@@ -342,7 +433,7 @@ function renderDashboard() {
   const todaySales = db.sales.filter(isSaleToday);
   const readyDelivery = db.devices.filter(d => d.status === 'Reparado');
   const lowStock = db.products.filter(p => Number(p.stock) <= Number(p.min));
-  document.getElementById('statSales').textContent = money(todaySales.reduce((a, s) => a + Number(s.total || 0), 0));
+  document.getElementById('statSales').textContent = money(db.sales.reduce((sum, s) => sum + saleCollectedToday(s), 0));
   document.getElementById('statTodayDocs').textContent = todaySales.length;
   document.getElementById('statClients').textContent = db.clients.length;
   document.getElementById('statDevices').textContent = db.devices.length;
@@ -566,7 +657,7 @@ function setupClientAutocomplete(searchId, hiddenId, suggestionsId) {
 }
 
 function refreshClientSelectors() {
-  [['deviceClientSearch','deviceClient','deviceClientSuggestions'],['saleClientSearch','saleClient','saleClientSuggestions']].forEach(([searchId, hiddenId, suggestionsId]) => {
+  [['deviceClientSearch','deviceClient','deviceClientSuggestions'],['saleClientSearch','saleClient','saleClientSuggestions'],['proformaClientSearch','proformaClient','proformaClientSuggestions']].forEach(([searchId, hiddenId, suggestionsId]) => {
     const hidden = document.getElementById(hiddenId);
     const input = document.getElementById(searchId);
     if (!hidden || !input) return;
@@ -590,10 +681,12 @@ function renderClients(filter = '') {
 document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
 setupClientAutocomplete('deviceClientSearch', 'deviceClient', 'deviceClientSuggestions');
 setupClientAutocomplete('saleClientSearch', 'saleClient', 'saleClientSuggestions');
+setupClientAutocomplete('proformaClientSearch', 'proformaClient', 'proformaClientSuggestions');
 document.addEventListener('mousedown', e => {
   if (!e.target.closest('.client-autocomplete')) {
     closeClientSuggestions('deviceClientSuggestions');
     closeClientSuggestions('saleClientSuggestions');
+    closeClientSuggestions('proformaClientSuggestions');
   }
 });
 document.getElementById('clientForm').onsubmit = e => {
@@ -654,7 +747,7 @@ window.openClientHistory = id => {
     <td><button class="mini" onclick="printWorkOrder('${d.id}')">Orden</button></td>
   </tr>`).join('') || '<tr><td colspan="6" class="empty">Este cliente no tiene equipos registrados.</td></tr>';
   const saleRows = sales.map(s => `<tr>
-    <td><strong>${esc(s.number)}</strong></td><td>${esc(saleTypeLabel(s))}</td><td>${esc(s.date || '')}</td><td>${esc(s.payment || '-')}</td><td><strong>${money(s.total)}</strong></td><td><button class="mini" onclick="printInvoice('${s.id}','a4')">Imprimir</button></td>
+    <td><strong>${esc(s.number)}</strong></td><td>${esc(saleTypeLabel(s))}</td><td>${esc(s.date || '')}</td><td>${esc(salePaymentLabel(s))}</td><td><strong>${money(s.total)}</strong><br><span class="muted">Saldo: ${money(saleBalanceAmount(s))}</span></td><td><button class="mini" onclick="printInvoice('${s.id}','a4')">Imprimir</button></td>
   </tr>`).join('') || '<tr><td colspan="6" class="empty">Este cliente no tiene facturas registradas.</td></tr>';
   document.getElementById('clientHistoryContent').innerHTML = `
     <div class="history-head"><div><span class="history-kicker">HISTORIAL DEL CLIENTE</span><h2>${esc(c.name)}</h2><p>${esc(c.cedula)} · ${esc(c.phone || '-')} · ${esc(c.email || '-')}</p></div></div>
@@ -978,11 +1071,13 @@ function refreshProductAutocomplete(searchId, hiddenId, suggestionsId, previewId
 
 setupProductAutocomplete('saleProductSearch', 'saleProduct', 'saleProductSuggestions', 'saleProductPreview');
 setupProductAutocomplete('repairProductSearch', 'repairProduct', 'repairProductSuggestions', 'repairProductPreview');
+setupProductAutocomplete('proformaProductSearch', 'proformaProduct', 'proformaProductSuggestions', 'proformaProductPreview');
 
 document.addEventListener('mousedown', e => {
   if (!e.target.closest('.product-autocomplete')) {
     closeProductSuggestions('saleProductSuggestions');
     closeProductSuggestions('repairProductSuggestions');
+    closeProductSuggestions('proformaProductSuggestions');
   }
 });
 
@@ -1104,6 +1199,7 @@ function renderRepairCart() {
   document.getElementById('repairTax').textContent = money(parts.tax);
   document.getElementById('repairTaxLabel').textContent = `IVA incluido (${taxRate}%)`;
   document.getElementById('repairTotal').textContent = money(total);
+  setCheckoutPaymentUi('repair', total);
 }
 
 document.getElementById('finishRepairBtn').onclick = () => {
@@ -1124,6 +1220,9 @@ document.getElementById('finishRepairBtn').onclick = () => {
   const gross = repairCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
   const parts = splitIncludedTax(gross);
   const { subtotal, taxRate, tax, total } = parts;
+  const paymentInfo = getCheckoutPayment('repair', total);
+  if (paymentInfo.error) return toast(paymentInfo.error);
+  const initialPayment = paymentInfo.paid > 0 ? makePaymentRecord(paymentInfo.paid, document.getElementById('repairPaymentMethod').value, 'Pago inicial') : null;
   const sale = {
     id: uid('VTA'),
     number: nextInvoiceNumber(),
@@ -1140,7 +1239,11 @@ document.getElementById('finishRepairBtn').onclick = () => {
     taxIncluded: true,
     payment: document.getElementById('repairPaymentMethod').value,
     items: clone(repairCart),
-    subtotal, taxRate, tax, total
+    subtotal, taxRate, tax, total,
+    amountPaid: paymentInfo.paid,
+    balance: paymentInfo.balance,
+    paymentStatus: paymentInfo.status,
+    payments: initialPayment ? [initialPayment] : []
   };
 
   sale.items.filter(i => i.type === 'product').forEach(i => {
@@ -1154,13 +1257,16 @@ document.getElementById('finishRepairBtn').onclick = () => {
   d.repairSaleId = sale.id;
   d.warrantyStart = Number(d.warrantyDays || 0) > 0 ? today() : '';
   d.warrantyUntil = d.warrantyStart ? addDaysToDateKey(d.warrantyStart, d.warrantyDays) : '';
-  db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, date: now(), type: 'ingreso', amount: total, concept: `Reparación ${d.order} · ${sale.number}` });
+  if (paymentInfo.paid > 0) {
+    db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, paymentId: initialPayment?.id || '', date: now(), type: 'ingreso', amount: paymentInfo.paid, concept: `Reparación ${d.order} · ${sale.number}` });
+  }
 
   repairCart = [];
+  document.getElementById('repairPaymentMode').value = 'full';
   save();
   renderRepairCart();
   printInvoice(sale.id);
-  toast('Reparación finalizada y facturada');
+  toast(paymentInfo.balance > 0 ? `Reparación facturada · Saldo pendiente ${money(paymentInfo.balance)}` : 'Reparación finalizada y pagada');
 };
 
 window.printWorkOrder = id => {
@@ -1189,6 +1295,7 @@ function renderProducts(filter = '') {
 
   refreshProductAutocomplete('saleProductSearch', 'saleProduct', 'saleProductSuggestions', 'saleProductPreview');
   refreshProductAutocomplete('repairProductSearch', 'repairProduct', 'repairProductSuggestions', 'repairProductPreview');
+  refreshProductAutocomplete('proformaProductSearch', 'proformaProduct', 'proformaProductSuggestions', 'proformaProductPreview');
 }
 
 function renderInventory() {
@@ -1266,6 +1373,7 @@ function renderSaleCart() {
   document.getElementById('saleTax').textContent = money(parts.tax);
   document.getElementById('saleTaxLabel').textContent = `IVA incluido (${taxRate}%)`;
   document.getElementById('saleTotal').textContent = money(total);
+  setCheckoutPaymentUi('sale', total);
 }
 
 document.getElementById('addProductBtn').onclick = () => {
@@ -1295,6 +1403,23 @@ function nextInvoiceNumber() {
   return 'FAC-' + String(Math.max(0, ...nums) + 1).padStart(6, '0');
 }
 
+document.getElementById('salePaymentMode').onchange = () => {
+  if (document.getElementById('salePaymentMode').value === 'partial') document.getElementById('saleAmountPaid').value = '0';
+  renderSaleCart();
+};
+document.getElementById('saleAmountPaid').oninput = () => {
+  const gross = saleCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
+  setCheckoutPaymentUi('sale', gross);
+};
+document.getElementById('repairPaymentMode').onchange = () => {
+  if (document.getElementById('repairPaymentMode').value === 'partial') document.getElementById('repairAmountPaid').value = '0';
+  renderRepairCart();
+};
+document.getElementById('repairAmountPaid').oninput = () => {
+  const gross = repairCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
+  setCheckoutPaymentUi('repair', gross);
+};
+
 document.getElementById('finishSaleBtn').onclick = () => {
   if (!db.cash.open) return toast('Debe abrir la caja antes de vender');
   if (!saleCart.length) return toast('La venta está vacía');
@@ -1310,6 +1435,9 @@ document.getElementById('finishSaleBtn').onclick = () => {
   const gross = saleCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
   const parts = splitIncludedTax(gross);
   const { subtotal, taxRate, tax, total } = parts;
+  const paymentInfo = getCheckoutPayment('sale', total);
+  if (paymentInfo.error) return toast(paymentInfo.error);
+  const initialPayment = paymentInfo.paid > 0 ? makePaymentRecord(paymentInfo.paid, document.getElementById('paymentMethod').value, 'Pago inicial') : null;
   const sale = {
     id: uid('VTA'),
     number: nextInvoiceNumber(),
@@ -1325,7 +1453,12 @@ document.getElementById('finishSaleBtn').onclick = () => {
     taxIncluded: true,
     payment: document.getElementById('paymentMethod').value,
     items: clone(saleCart),
-    subtotal, taxRate, tax, total
+    subtotal, taxRate, tax, total,
+    amountPaid: paymentInfo.paid,
+    balance: paymentInfo.balance,
+    paymentStatus: paymentInfo.status,
+    payments: initialPayment ? [initialPayment] : [],
+    proformaId: activeProformaForSaleId || ''
   };
 
   sale.items.forEach(i => {
@@ -1333,7 +1466,18 @@ document.getElementById('finishSaleBtn').onclick = () => {
     p.stock -= Number(i.qty);
   });
   db.sales.push(sale);
-  db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, date: now(), type: 'ingreso', amount: total, concept: 'Venta ' + sale.number });
+  if (paymentInfo.paid > 0) {
+    db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, paymentId: initialPayment?.id || '', date: now(), type: 'ingreso', amount: paymentInfo.paid, concept: 'Venta ' + sale.number });
+  }
+  if (activeProformaForSaleId) {
+    const pf = db.proformas.find(x => x.id === activeProformaForSaleId);
+    if (pf) {
+      pf.status = 'Convertida';
+      pf.saleId = sale.id;
+      pf.convertedAt = now();
+    }
+  }
+  activeProformaForSaleId = '';
   saleCart = [];
   document.getElementById('saleClient').value = '';
   document.getElementById('saleClientSearch').value = '';
@@ -1342,25 +1486,338 @@ document.getElementById('finishSaleBtn').onclick = () => {
   document.getElementById('saleProductSearch').value = '';
   closeProductSuggestions('saleProductSuggestions');
   updateProductPreview('saleProduct', 'saleProductPreview');
+  document.getElementById('salePaymentMode').value = 'full';
   save();
   renderSaleCart();
   printInvoice(sale.id);
-  toast('Venta registrada');
+  toast(paymentInfo.balance > 0 ? `Venta registrada · Saldo pendiente ${money(paymentInfo.balance)}` : 'Venta registrada y pagada');
+};
+
+
+function nextProformaNumber() {
+  const nums = db.proformas.map(p => Number(String(p.number || '').replace(/\D/g, '')) || 0);
+  return 'PRO-' + String(Math.max(0, ...nums) + 1).padStart(6, '0');
+}
+
+function proformaStatus(pf) {
+  if (pf?.status === 'Convertida') return 'Convertida';
+  if (pf?.validUntil && String(pf.validUntil) < today()) return 'Vencida';
+  return pf?.status || 'Vigente';
+}
+
+function renderProformaCart() {
+  const gross = proformaCart.reduce((a, i) => a + Number(i.price) * Number(i.qty), 0);
+  const parts = splitIncludedTax(gross);
+  const list = document.getElementById('proformaCartList');
+  if (!list) return;
+  list.innerHTML = proformaCart.map((i, idx) => `
+    <div class="cart-item"><div><strong>📦 ${esc(i.name)}</strong><div class="muted">${esc(i.code || '')} · ${i.qty} × ${money(i.price)}</div></div><div class="cart-item-price"><strong>${money(i.qty * i.price)}</strong><button class="mini danger" onclick="removeProformaCart(${idx})">×</button></div></div>
+  `).join('') || '<div class="empty">Agregue productos a la proforma.</div>';
+  document.getElementById('proformaSubtotal').textContent = money(parts.subtotal);
+  document.getElementById('proformaTax').textContent = money(parts.tax);
+  document.getElementById('proformaTaxLabel').textContent = `IVA incluido (${parts.taxRate}%)`;
+  document.getElementById('proformaTotal').textContent = money(parts.total);
+}
+
+document.getElementById('addProformaProductBtn').onclick = () => {
+  const id = document.getElementById('proformaProduct').value;
+  const qty = Number(document.getElementById('proformaQty').value || 1);
+  const product = db.products.find(x => x.id === id);
+  if (!product) return toast('Seleccione un producto');
+  if (qty <= 0) return toast('Ingrese una cantidad válida');
+  const already = proformaCart.filter(i => i.productId === id).reduce((sum, i) => sum + Number(i.qty || 0), 0);
+  if (qty + already > Number(product.stock || 0)) return toast('La cantidad supera el stock disponible');
+  proformaCart.push({ type: 'product', productId: product.id, code: product.code, name: product.name, qty, price: Number(product.price) });
+  document.getElementById('proformaQty').value = 1;
+  document.getElementById('proformaProduct').value = '';
+  document.getElementById('proformaProductSearch').value = '';
+  closeProductSuggestions('proformaProductSuggestions');
+  updateProductPreview('proformaProduct', 'proformaProductPreview');
+  renderProformaCart();
+};
+
+window.removeProformaCart = idx => {
+  proformaCart.splice(idx, 1);
+  renderProformaCart();
+};
+
+function saveProforma(printAfter = false) {
+  if (!proformaCart.length) return toast('La proforma está vacía');
+  const clientId = document.getElementById('proformaClient').value;
+  const client = db.clients.find(c => c.id === clientId);
+  if (!client) return toast('Seleccione un cliente');
+  const validityDays = Math.max(1, Number(document.getElementById('proformaValidity').value || 7));
+  const gross = proformaCart.reduce((sum, i) => sum + Number(i.price) * Number(i.qty), 0);
+  const parts = splitIncludedTax(gross);
+  const pf = {
+    id: uid('COT'),
+    number: nextProformaNumber(),
+    date: now(),
+    dateKey: today(),
+    validityDays,
+    validUntil: addDaysToDateKey(today(), validityDays),
+    clientId: client.id,
+    clientName: client.name,
+    clientCedula: client.cedula,
+    clientPhone: client.phone,
+    clientEmail: client.email || '',
+    clientAddress: client.address || '',
+    items: clone(proformaCart),
+    notes: document.getElementById('proformaNotes').value.trim(),
+    taxIncluded: true,
+    subtotal: parts.subtotal,
+    taxRate: parts.taxRate,
+    tax: parts.tax,
+    total: parts.total,
+    status: 'Vigente',
+    saleId: ''
+  };
+  db.proformas.push(pf);
+  proformaCart = [];
+  document.getElementById('proformaClient').value = '';
+  document.getElementById('proformaClientSearch').value = '';
+  document.getElementById('proformaProduct').value = '';
+  document.getElementById('proformaProductSearch').value = '';
+  document.getElementById('proformaQty').value = 1;
+  document.getElementById('proformaValidity').value = 7;
+  document.getElementById('proformaNotes').value = '';
+  closeClientSuggestions('proformaClientSuggestions');
+  closeProductSuggestions('proformaProductSuggestions');
+  updateProductPreview('proformaProduct', 'proformaProductPreview');
+  save();
+  renderProformaCart();
+  if (printAfter) printProforma(pf.id);
+  toast(`Proforma ${pf.number} guardada`);
+}
+
+document.getElementById('saveProformaBtn').onclick = () => saveProforma(false);
+document.getElementById('savePrintProformaBtn').onclick = () => saveProforma(true);
+document.getElementById('proformaSearch').oninput = renderProformas;
+
+function renderProformas() {
+  const table = document.getElementById('proformasTable');
+  if (!table) return;
+  const q = normalizeSearchText(document.getElementById('proformaSearch')?.value || '');
+  const rows = db.proformas.filter(pf => !q || normalizeSearchText(`${pf.number || ''} ${pf.clientName || ''} ${pf.clientCedula || ''}`).includes(q));
+  table.innerHTML = rows.slice().reverse().map(pf => {
+    const status = proformaStatus(pf);
+    const statusClass = status === 'Convertida' ? 'good' : status === 'Vencida' ? 'bad' : 'warn';
+    return `<tr>
+      <td><strong>${esc(pf.number)}</strong></td>
+      <td>${esc(pf.date || '')}</td>
+      <td>${esc(pf.clientName || '-')}<br><span class="muted">${esc(pf.clientCedula || '')}</span></td>
+      <td>${esc(pf.validUntil || '-')}</td>
+      <td><span class="status ${statusClass}">${esc(status)}</span></td>
+      <td><strong>${money(pf.total)}</strong></td>
+      <td><div class="action-row">
+        <button class="mini primary-mini" onclick="printProforma('${pf.id}')">Imprimir</button>
+        ${status !== 'Convertida' ? `<button class="mini good-mini" onclick="convertProformaToSale('${pf.id}')">Convertir en venta</button>` : (pf.saleId ? `<button class="mini" onclick="printInvoice('${pf.saleId}')">Ver factura</button>` : '')}
+        ${status !== 'Convertida' ? `<button class="mini danger" onclick="deleteProforma('${pf.id}')">Eliminar</button>` : ''}
+      </div></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="empty">No hay proformas guardadas.</td></tr>';
+}
+
+window.deleteProforma = id => {
+  const pf = db.proformas.find(x => x.id === id);
+  if (!pf) return;
+  if (pf.status === 'Convertida') return toast('Una proforma convertida no se puede eliminar desde aquí');
+  if (!confirm(`¿Eliminar la proforma ${pf.number}?`)) return;
+  db.proformas = db.proformas.filter(x => x.id !== id);
+  save();
+  toast('Proforma eliminada');
+};
+
+window.convertProformaToSale = id => {
+  const pf = db.proformas.find(x => x.id === id);
+  if (!pf) return;
+  if (pf.status === 'Convertida') return toast('Esta proforma ya fue convertida en venta');
+  const client = db.clients.find(c => c.id === pf.clientId);
+  if (!client) return toast('El cliente de la proforma ya no existe');
+  for (const item of pf.items || []) {
+    const product = db.products.find(p => p.id === item.productId);
+    if (!product) return toast(`El producto ${item.name} ya no existe`);
+    if (Number(product.stock || 0) < Number(item.qty || 0)) return toast(`Stock insuficiente para ${item.name}`);
+  }
+  saleCart = clone(pf.items || []);
+  activeProformaForSaleId = pf.id;
+  document.getElementById('saleClient').value = client.id;
+  document.getElementById('saleClientSearch').value = clientDisplayText(client);
+  document.getElementById('salePaymentMode').value = 'full';
+  showView('ventas');
+  renderSaleCart();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  toast(`${pf.number} cargada en Ventas. Revisa el cobro y finaliza la venta.`);
+};
+
+window.printProforma = id => {
+  const pf = db.proformas.find(x => x.id === id);
+  if (!pf) return;
+  const companyName = db.company.name || 'Soporte360';
+  const logo = db.company.logo ? `<img src="${db.company.logo}" class="pro-logo" alt="Logo">` : `<div class="pro-logo-placeholder">${esc(companyName.charAt(0).toUpperCase())}</div>`;
+  const itemRows = (pf.items || []).map((item, idx) => `
+    <tr><td class="num">${idx + 1}</td><td class="code">${esc(item.code || '-')}</td><td><div class="desc-main">${esc(item.name || '')}</div><div class="desc-type">Producto / servicio</div></td><td class="qty">${Number(item.qty || 0)}</td><td class="money-cell">${money(item.price)}</td><td class="money-cell total-cell">${money(Number(item.price || 0) * Number(item.qty || 0))}</td></tr>
+  `).join('');
+  const body = `
+    <div class="invoice-sheet pro-sheet">
+      <div class="pro-accent-line"></div>
+      <header class="pro-header">
+        <div class="pro-company-block">
+          ${logo}
+          <div class="pro-company-copy">
+            <h1>${esc(companyName)}</h1>
+            ${db.company.legal ? `<div class="legal-name">${esc(db.company.legal)}</div>` : ''}
+            <div class="company-contact">${esc(db.company.address || '')}</div>
+            <div class="company-contact">Tel: ${esc(db.company.phone || '-')} ${db.company.email ? ` · ${esc(db.company.email)}` : ''}</div>
+          </div>
+        </div>
+        <div class="pro-doc-box">
+          <div class="doc-ruc">RUC ${esc(db.company.ruc || '-')}</div>
+          <div class="doc-title">PROFORMA</div>
+          <div class="doc-number">${esc(pf.number)}</div>
+          <div class="doc-kind">COTIZACIÓN COMERCIAL</div>
+          <div class="doc-note">NO CONSTITUYE FACTURA</div>
+        </div>
+      </header>
+      <section class="pro-info-grid">
+        <div class="pro-info-box client-info">
+          <div class="box-title">DATOS DEL CLIENTE</div>
+          <div class="info-row"><span>CI / RUC</span><strong>${esc(pf.clientCedula || '-')}</strong></div>
+          <div class="info-row"><span>Cliente</span><strong>${esc(pf.clientName || '-')}</strong></div>
+          <div class="info-row"><span>Dirección</span><strong>${esc(pf.clientAddress || '-')}</strong></div>
+          <div class="info-row"><span>Teléfono</span><strong>${esc(pf.clientPhone || '-')}</strong></div>
+        </div>
+        <div class="pro-info-box issue-info">
+          <div class="box-title">DATOS DE LA PROFORMA</div>
+          <div class="info-row"><span>Fecha emisión</span><strong>${esc(pf.date || '')}</strong></div>
+          <div class="info-row"><span>Válida hasta</span><strong>${esc(pf.validUntil || '-')}</strong></div>
+          <div class="info-row"><span>Vigencia</span><strong>${Number(pf.validityDays || 0)} días</strong></div>
+          <div class="info-row"><span>Estado</span><strong>${esc(proformaStatus(pf))}</strong></div>
+        </div>
+      </section>
+      <table class="pro-items-table">
+        <thead><tr><th class="num">#</th><th class="code">CÓD.</th><th>DESCRIPCIÓN</th><th class="qty">CANT.</th><th class="money-cell">PRECIO U.</th><th class="money-cell">IMPORTE</th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      <section class="pro-bottom">
+        <div class="pro-observations">
+          <div class="box-title">OBSERVACIONES</div>
+          <p>${pf.notes ? esc(pf.notes).replace(/\n/g, '<br>') : 'Precios sujetos a la vigencia indicada. La proforma no reserva existencias y no genera movimientos de caja.'}</p>
+          ${db.company.serviceClause ? `<div class="invoice-terms"><strong>Condiciones:</strong><br>${esc(db.company.serviceClause).replace(/\n/g, '<br>')}</div>` : ''}
+          <div class="thanks-message"><strong>Gracias por confiar en ${esc(companyName)}.</strong><br>Estamos a su disposición para confirmar esta proforma.</div>
+        </div>
+        <div class="pro-totals">
+          <div><span>SUBTOTAL</span><strong>${money(pf.subtotal)}</strong></div>
+          <div><span>IVA ${Number(pf.taxRate || 0)}%</span><strong>${money(pf.tax)}</strong></div>
+          <div class="pro-total-final"><span>VALOR TOTAL</span><strong>${money(pf.total)}</strong></div>
+        </div>
+      </section>
+      <section class="pro-signatures">
+        <div><span></span><small>Aceptación del cliente</small></div>
+        <div><span></span><small>Responsable</small></div>
+      </section>
+      <footer class="pro-footer"><div>${esc(companyName)} · Proforma comercial</div><div>${esc(db.company.phone || '')}</div></footer>
+    </div>`;
+  printHtml(pf.number, body, 'invoice');
+};
+
+function renderReceivables() {
+  const table = document.getElementById('receivablesTable');
+  if (!table) return;
+  const pending = db.sales.filter(s => saleBalanceAmount(s) > 0.004);
+  const q = normalizeSearchText(document.getElementById('receivableSearch')?.value || '');
+  const filtered = pending.filter(s => !q || normalizeSearchText(`${s.number || ''} ${s.clientName || ''} ${s.clientCedula || ''} ${s.order || ''}`).includes(q));
+  const totalPending = pending.reduce((sum, s) => sum + saleBalanceAmount(s), 0);
+  const clients = new Set(pending.map(s => s.clientId).filter(Boolean));
+  const todayPayments = db.sales.flatMap(s => Array.isArray(s.payments) ? s.payments : []).filter(p => p.dateKey === today() && p.note === 'Abono').reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  document.getElementById('receivableTotal').textContent = money(totalPending);
+  document.getElementById('receivableCount').textContent = pending.length;
+  document.getElementById('receivableClients').textContent = clients.size;
+  document.getElementById('receivableToday').textContent = money(todayPayments);
+  table.innerHTML = filtered.slice().reverse().map(s => `
+    <tr>
+      <td><strong>${esc(s.number)}</strong>${s.order ? `<br><span class="muted">${esc(s.order)}</span>` : ''}</td>
+      <td><span class="status ${s.source === 'repair' ? 'warn' : 'good'}">${saleTypeLabel(s)}</span></td>
+      <td>${esc(s.clientName || '-')}<br><span class="muted">${esc(s.clientCedula || '')}</span></td>
+      <td>${esc(s.date || '')}</td>
+      <td><strong>${money(s.total)}</strong></td>
+      <td>${money(salePaidAmount(s))}</td>
+      <td><strong class="balance-due">${money(saleBalanceAmount(s))}</strong></td>
+      <td><div class="action-row"><button class="mini good-mini" onclick="openReceivablePayment('${s.id}')">Registrar abono</button><button class="mini" onclick="printInvoice('${s.id}')">Factura</button></div></td>
+    </tr>
+  `).join('') || '<tr><td colspan="8" class="empty">No hay saldos pendientes.</td></tr>';
+}
+
+document.getElementById('receivableSearch').oninput = renderReceivables;
+
+function closeReceivablePaymentModal() {
+  const modal = document.getElementById('receivablePaymentModal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+document.querySelectorAll('[data-close-receivable-payment]').forEach(el => el.onclick = closeReceivablePaymentModal);
+
+window.openReceivablePayment = id => {
+  const sale = db.sales.find(s => s.id === id);
+  if (!sale) return;
+  const balance = saleBalanceAmount(sale);
+  if (balance <= 0.004) return toast('Esta factura ya está pagada');
+  document.getElementById('receivableSaleId').value = sale.id;
+  document.getElementById('receivablePaymentTitle').textContent = `${sale.number} · ${sale.clientName || ''}`;
+  document.getElementById('receivablePaymentSummary').textContent = `${saleTypeLabel(sale)} · Total ${money(sale.total)} · Abonado ${money(salePaidAmount(sale))}`;
+  document.getElementById('receivableCurrentBalance').textContent = money(balance);
+  const amount = document.getElementById('receivablePaymentAmount');
+  amount.value = balance.toFixed(2);
+  amount.max = balance.toFixed(2);
+  document.getElementById('receivablePaymentModal').classList.add('open');
+  document.getElementById('receivablePaymentModal').setAttribute('aria-hidden', 'false');
+  setTimeout(() => amount.focus(), 50);
+};
+
+document.getElementById('receivablePaymentForm').onsubmit = e => {
+  e.preventDefault();
+  if (!db.cash.open) return toast('Debe abrir la caja antes de registrar un abono');
+  const sale = db.sales.find(s => s.id === document.getElementById('receivableSaleId').value);
+  if (!sale) return toast('No se encontró la factura');
+  const balance = saleBalanceAmount(sale);
+  const amount = Number(document.getElementById('receivablePaymentAmount').value || 0);
+  const method = document.getElementById('receivablePaymentMethod').value;
+  if (!Number.isFinite(amount) || amount <= 0) return toast('Ingrese un abono válido');
+  if (amount > balance + 0.004) return toast('El abono no puede superar el saldo pendiente');
+  const payment = makePaymentRecord(amount, method, 'Abono');
+  if (!Array.isArray(sale.payments)) sale.payments = [];
+  sale.payments.push(payment);
+  // Recalcular usando el historial para evitar diferencias por redondeo.
+  sale.amountPaid = Math.min(Number(sale.total || 0), sale.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0));
+  sale.balance = Math.max(0, Number(sale.total || 0) - sale.amountPaid);
+  sale.paymentStatus = sale.balance > 0.004 ? 'Pendiente' : 'Pagado';
+  db.cash.movements.push({ id: uid('MOV'), saleId: sale.id, paymentId: payment.id, date: now(), type: 'ingreso', amount, concept: `Abono ${sale.number} · ${method}` });
+  closeReceivablePaymentModal();
+  save();
+  toast(sale.balance > 0.004 ? `Abono registrado · Saldo ${money(sale.balance)}` : 'Abono registrado · Factura pagada');
 };
 
 function renderInvoices() {
-  document.getElementById('invoicesTable').innerHTML = db.sales.slice().reverse().map(s => `
-    <tr>
+  document.getElementById('invoicesTable').innerHTML = db.sales.slice().reverse().map(s => {
+    const paid = salePaidAmount(s);
+    const balance = saleBalanceAmount(s);
+    const status = salePaymentStatus(s);
+    return `<tr>
       <td><strong>${esc(s.number)}</strong></td>
       <td><span class="status ${s.source === 'repair' ? 'warn' : 'good'}">${saleTypeLabel(s)}</span></td>
       <td>${esc(s.order || '-')}</td>
       <td>${esc(s.date)}</td>
       <td>${esc(s.clientName)}</td>
-      <td>${esc(s.payment)}</td>
+      <td>${esc(salePaymentLabel(s))}</td>
       <td><strong>${money(s.total)}</strong></td>
-      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Enviar factura</button>${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button>` : ''}</div></td>
-    </tr>
-  `).join('') || '<tr><td colspan="8" class="empty">No hay facturas.</td></tr>';
+      <td>${money(paid)}</td>
+      <td><strong>${money(balance)}</strong></td>
+      <td><span class="status ${status === 'Pagado' ? 'good' : 'warn'}">${status}</span></td>
+      <td><div class="action-row"><button class="mini primary-mini" onclick="printInvoice('${s.id}','a4')">A4</button><button class="mini" onclick="printInvoice('${s.id}','ticket')">Ticket 80 mm</button><button class="mini good-mini" onclick="sendInvoiceEmail('${s.id}')">Enviar factura</button>${balance > 0.004 ? `<button class="mini good-mini" onclick="openReceivablePayment('${s.id}')">Abonar</button>` : ''}${isOwner() ? `<button class="mini danger" onclick="deleteInvoice('${s.id}')">Eliminar</button>` : ''}</div></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="11" class="empty">No hay facturas.</td></tr>';
 }
 
 window.deleteInvoice = (id, fromDevice = false) => {
@@ -1381,6 +1838,14 @@ window.deleteInvoice = (id, fromDevice = false) => {
       delete d.repairedAt; delete d.deliveredAt; d.warrantyStart = ''; d.warrantyUntil = '';
     }
   }
+  if (sale.proformaId) {
+    const pf = db.proformas.find(x => x.id === sale.proformaId);
+    if (pf) {
+      pf.status = 'Vigente';
+      pf.saleId = '';
+      pf.convertedAt = '';
+    }
+  }
   db.sales = db.sales.filter(s => s.id !== id);
   save();
   toast('Factura eliminada y movimientos revertidos');
@@ -1389,7 +1854,7 @@ window.deleteInvoice = (id, fromDevice = false) => {
 function invoiceEmailText(s) {
   const c = db.clients.find(x => x.id === s.clientId) || {};
   const lines = (s.items || []).map(i => `${i.qty} x ${i.name} - ${money(Number(i.price)*Number(i.qty))}`).join('\n');
-  return `Hola ${s.clientName || ''},\n\nAdjuntamos el detalle de su comprobante ${s.number}.\n\n${lines}\n\nSubtotal sin IVA: ${money(s.subtotal)}\nIVA incluido (${s.taxRate || 0}%): ${money(s.tax)}\nTOTAL: ${money(s.total)}\n\nGracias por confiar en ${db.company.name || 'nuestro servicio'}.`;
+  return `Hola ${s.clientName || ''},\n\nAdjuntamos el detalle de su comprobante ${s.number}.\n\n${lines}\n\nSubtotal sin IVA: ${money(s.subtotal)}\nIVA incluido (${s.taxRate || 0}%): ${money(s.tax)}\nTOTAL: ${money(s.total)}\nABONADO: ${money(salePaidAmount(s))}\nSALDO: ${money(saleBalanceAmount(s))}\nESTADO: ${salePaymentStatus(s)}\n\nGracias por confiar en ${db.company.name || 'nuestro servicio'}.`;
 }
 
 window.sendInvoiceEmail = id => {
@@ -1413,6 +1878,9 @@ window.printInvoice = (id, format = 'a4') => {
   const companyName = db.company.name || 'Soporte360';
   const logo = db.company.logo ? `<img src="${db.company.logo}" class="pro-logo" alt="Logo">` : `<div class="pro-logo-placeholder">${esc(companyName.charAt(0).toUpperCase())}</div>`;
   const ticketLogo = db.company.logo ? `<img src="${db.company.logo}" class="ticket-logo" alt="Logo">` : '';
+  const paidAmount = salePaidAmount(s);
+  const balanceAmount = saleBalanceAmount(s);
+  const paymentStatus = salePaymentStatus(s);
   const itemRows = (s.items || []).map((i, idx) => {
     const code = i.type === 'service' ? 'SERV' : (i.code || '-');
     return `<tr><td class="num">${idx + 1}</td><td class="code">${esc(code)}</td><td><div class="desc-main">${esc(i.name)}</div><div class="desc-type">${i.type === 'service' ? 'Servicio / mano de obra' : 'Producto / repuesto'}</div></td><td class="qty">${Number(i.qty)}</td><td class="money-cell">${money(i.price)}</td><td class="money-cell total-cell">${money(Number(i.price) * Number(i.qty))}</td></tr>`;
@@ -1437,10 +1905,10 @@ window.printInvoice = (id, format = 'a4') => {
       <div class="ticket-sheet">
         <header class="ticket-header">${ticketLogo}<h1>${esc(companyName)}</h1>${db.company.legal ? `<div>${esc(db.company.legal)}</div>` : ''}<div>${esc(db.company.address || '')}</div><div>RUC: ${esc(db.company.ruc || '-')}</div><div>Tel: ${esc(db.company.phone || '-')}</div></header>
         <div class="ticket-doc"><strong>COMPROBANTE</strong><span>${esc(s.number)}</span></div>
-        <div class="ticket-lines"><div><b>Cliente:</b> ${esc(s.clientName || '')}</div><div><b>CI/RUC:</b> ${esc(s.clientCedula || '-')}</div><div><b>Teléfono:</b> ${esc(s.clientPhone || c.phone || '-')}</div><div><b>Fecha:</b> ${esc(s.date || '')}</div><div><b>Pago:</b> ${esc(s.payment || '')}</div></div>
+        <div class="ticket-lines"><div><b>Cliente:</b> ${esc(s.clientName || '')}</div><div><b>CI/RUC:</b> ${esc(s.clientCedula || '-')}</div><div><b>Teléfono:</b> ${esc(s.clientPhone || c.phone || '-')}</div><div><b>Fecha:</b> ${esc(s.date || '')}</div><div><b>Pago:</b> ${esc(salePaymentLabel(s))}</div></div>
         ${ticketRepair}
         <table class="ticket-table"><thead><tr><th>Cant.</th><th>Descripción</th><th>P.U.</th><th>Total</th></tr></thead><tbody>${ticketItems}</tbody></table>
-        <div class="ticket-totals"><div><span>SUBTOTAL</span><b>${money(s.subtotal)}</b></div><div><span>IVA ${Number(s.taxRate || 0)}%</span><b>${money(s.tax)}</b></div><div class="ticket-grand"><span>TOTAL</span><b>${money(s.total)}</b></div></div>
+        <div class="ticket-totals"><div><span>SUBTOTAL</span><b>${money(s.subtotal)}</b></div><div><span>IVA ${Number(s.taxRate || 0)}%</span><b>${money(s.tax)}</b></div><div class="ticket-grand"><span>TOTAL</span><b>${money(s.total)}</b></div><div><span>ABONADO</span><b>${money(paidAmount)}</b></div><div><span>SALDO</span><b>${money(balanceAmount)}</b></div><div><span>ESTADO</span><b>${esc(paymentStatus)}</b></div></div>
         ${s.source === 'repair' && d && Number(d.warrantyDays || 0) > 0 ? `<div class="ticket-note"><b>Garantía:</b> ${esc(warrantyLabel(d))}</div>` : ''}
         ${s.source === 'repair' && db.company.serviceClause ? `<div class="ticket-note"><b>Condiciones:</b> ${esc(db.company.serviceClause)}</div>` : ''}
         <div class="ticket-note">Gracias por su compra. Conserve este comprobante.</div>
@@ -1482,9 +1950,10 @@ window.printInvoice = (id, format = 'a4') => {
         <div class="pro-info-box issue-info">
           <div class="box-title">DATOS DEL COMPROBANTE</div>
           <div class="info-row"><span>Fecha emisión</span><strong>${esc(s.date || '')}</strong></div>
-          <div class="info-row"><span>Forma de pago</span><strong>${esc(s.payment || '-')}</strong></div>
+          <div class="info-row"><span>Forma de pago</span><strong>${esc(salePaymentLabel(s))}</strong></div>
           <div class="info-row"><span>Tipo</span><strong>${s.source === 'repair' ? 'Reparación' : 'Venta'}</strong></div>
           <div class="info-row"><span>N.º control</span><strong>${esc(s.order || s.number)}</strong></div>
+          <div class="info-row"><span>Estado de pago</span><strong>${esc(paymentStatus)}</strong></div>
         </div>
       </section>
 
@@ -1506,6 +1975,8 @@ window.printInvoice = (id, format = 'a4') => {
           <div><span>SUBTOTAL</span><strong>${money(s.subtotal)}</strong></div>
           <div><span>IVA ${Number(s.taxRate || 0)}%</span><strong>${money(s.tax)}</strong></div>
           <div class="pro-total-final"><span>VALOR TOTAL</span><strong>${money(s.total)}</strong></div>
+          <div><span>ABONADO</span><strong>${money(paidAmount)}</strong></div>
+          <div class="${balanceAmount > 0.004 ? 'payment-due-row' : ''}"><span>SALDO</span><strong>${money(balanceAmount)}</strong></div>
         </div>
       </section>
 
@@ -1694,11 +2165,14 @@ document.getElementById('resetDataBtn').onclick = () => {
   db = clone(defaults);
   saleCart = [];
   repairCart = [];
+  proformaCart = [];
   activeRepairDeviceId = '';
+  activeProformaForSaleId = '';
   logoDraftUrl = '';
   save();
   renderSaleCart();
   renderRepairCart();
+  renderProformaCart();
   toast('Datos restablecidos');
 };
 
@@ -1719,7 +2193,7 @@ function closeLogoModal() {
 document.getElementById('brandLogo').onclick = openLogoModal;
 document.getElementById('companyLogoPreview').onclick = openLogoModal;
 document.querySelectorAll('[data-close-logo]').forEach(el => el.onclick = closeLogoModal);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLogoModal(); closeClientHistoryModal(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLogoModal(); closeClientHistoryModal(); closeReceivablePaymentModal(); } });
 
 
 function renderMachineInventory() {
@@ -1758,8 +2232,11 @@ function renderAll() {
   renderInventory();
   renderMachineInventory();
   renderInvoices();
+  renderProformas();
+  renderReceivables();
   renderCompany();
   renderSaleCart();
+  renderProformaCart();
   renderRepairWorkspace();
   applyRoleAccess();
 }
@@ -1844,7 +2321,7 @@ const guideSteps = {
     { selector: '#repairOrderSummary', icon: '🧾', title: 'Orden de reparación', text: 'Al entrar desde Equipos se carga automáticamente la orden elegida. También puedes seleccionar otra orden desde la parte superior.' },
     { selector: '#repairProductSearch', icon: '📦', title: 'Buscar productos', text: 'Escribe nombre, código o categoría. Aparecerán coincidencias con precio y stock. La mano de obra se agrega también como un producto previamente registrado.' },
     { selector: '#repairCartList', icon: '📋', title: 'Detalle de reparación', text: 'Revisa todos los productos agregados a la reparación antes de cobrar.' },
-    { selector: '#finishRepairBtn', icon: '✅', title: 'Generar factura de reparación', text: 'Con la caja abierta, este botón marca el equipo como reparado, descuenta repuestos, registra el ingreso y genera la factura.' }
+    { selector: '#finishRepairBtn', icon: '✅', title: 'Generar factura de reparación', text: 'Con la caja abierta, este botón marca el equipo como reparado, descuenta productos y genera la factura. Si registras un abono, solo ese valor entra a caja y el resto queda pendiente.' }
   ],
   productos: [
     { selector: '#productCode', icon: '🏷️', title: 'Código único', text: 'Cada producto debe tener un código diferente. El sistema valida que no exista otro producto con el mismo código antes de guardarlo.' },
@@ -1870,10 +2347,21 @@ const guideSteps = {
     { selector: '#saleProductSearch', icon: '📦', title: 'Buscar producto', text: 'Escribe nombre, código o categoría. Las coincidencias aparecen debajo con stock y precio; selecciona una para agregarla a la venta.' },
     { selector: '#addProductBtn', icon: '➕', title: 'Agregar al detalle', text: 'Indica la cantidad y agrega el producto. El sistema verifica las existencias antes de completar la venta.' },
     { selector: '#cartList', icon: '🛒', title: 'Detalle de la venta', text: 'Aquí aparecen los productos agregados. Revisa cantidades y precios antes de finalizar.' },
-    { selector: '#finishSaleBtn', icon: '🧾', title: 'Finalizar venta', text: 'Selecciona la forma de pago y finaliza. La venta se registra en caja, descuenta el stock y genera el comprobante.' }
+    { selector: '#finishSaleBtn', icon: '🧾', title: 'Finalizar venta', text: 'Selecciona pago total o abono. Al finalizar se descuenta el stock, se genera la factura y solo el monto recibido entra a caja; cualquier diferencia queda como saldo pendiente.' }
+  ],
+  proformas: [
+    { selector: '#proformaClientSearch', icon: '👤', title: 'Cliente de la proforma', text: 'Busca al cliente por cédula o nombre y selecciónalo desde el autocompletado.' },
+    { selector: '#proformaProductSearch', icon: '📦', title: 'Productos de la proforma', text: 'Busca productos por nombre, código o categoría y agrega las cantidades que deseas cotizar.' },
+    { selector: '#savePrintProformaBtn', icon: '📋', title: 'Guardar e imprimir', text: 'La proforma se guarda sin descontar stock ni registrar dinero en caja. Puedes imprimirla y luego convertirla en venta si el cliente acepta.' },
+    { selector: '#proformasTable', icon: '🔁', title: 'Convertir en venta', text: 'Desde el historial puedes cargar una proforma aceptada en Ventas. El stock solo se descuenta al finalizar la venta.' }
+  ],
+  'cuentas-cobrar': [
+    { selector: '#view-cuentas-cobrar .receivable-stats', icon: '💳', title: 'Resumen de saldos', text: 'Consulta cuánto dinero está pendiente, cuántas facturas tienen saldo y cuántos clientes deben.' },
+    { selector: '#receivableSearch', icon: '🔎', title: 'Buscar saldos', text: 'Busca por factura, cliente, cédula u orden de reparación.' },
+    { selector: '#receivablesTable', icon: '💵', title: 'Registrar abonos', text: 'Usa Registrar abono para ingresar un pago parcial. El valor recibido entra a caja y el saldo se actualiza automáticamente.' }
   ],
   facturas: [
-    { selector: '#invoicesTable', icon: '📄', title: 'Historial de facturas', text: 'Aquí encontrarás las facturas de ventas y reparaciones. Desde las acciones puedes imprimir en A4 o ticket, usar Enviar factura para preparar el correo del cliente y eliminar una factura incorrecta.' },
+    { selector: '#invoicesTable', icon: '📄', title: 'Historial de facturas', text: 'Aquí encontrarás las facturas de ventas y reparaciones, con total, abonado, saldo y estado de pago. Puedes imprimir, enviar, abonar o eliminar cuando corresponda.' },
     { selector: '#view-facturas .panel-head', icon: '⚠️', title: 'Eliminar con cuidado', text: 'La eliminación de una factura es administrativa. Si borras una factura incorrecta, el sistema intenta revertir los movimientos relacionados, por lo que debes usar esta opción únicamente cuando sea necesario.' }
   ],
   configuracion: [

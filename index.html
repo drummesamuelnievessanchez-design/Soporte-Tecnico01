@@ -27,6 +27,8 @@
         <button class="nav-item" data-view="inventario"><span class="nav-icon">📊</span><span class="nav-label">Inventario</span></button>
         <button class="nav-item" data-view="inventario-equipos"><span class="nav-icon">🗂️</span><span class="nav-label">Inventario equipos</span></button>
         <button class="nav-item" data-view="ventas"><span class="nav-icon">🧾</span><span class="nav-label">Ventas</span></button>
+        <button class="nav-item" data-view="proformas"><span class="nav-icon">📋</span><span class="nav-label">Proformas</span></button>
+        <button class="nav-item" data-view="cuentas-cobrar"><span class="nav-icon">💳</span><span class="nav-label">Cuentas por cobrar</span></button>
         <button class="nav-item" data-view="facturas"><span class="nav-icon">📄</span><span class="nav-label">Facturas</span></button>
         <button class="nav-item" data-view="configuracion"><span class="nav-icon">⚙️</span><span class="nav-label">Configuración</span></button>
       </nav>
@@ -227,7 +229,12 @@
                 <div><span id="repairTaxLabel">IVA incluido</span><strong id="repairTax">$0.00</strong></div>
                 <div class="grand"><span>Total (IVA incluido)</span><strong id="repairTotal">$0.00</strong></div>
               </div>
-              <label>Forma de pago<select id="repairPaymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Mixto</option></select></label>
+              <div class="payment-box">
+                <label>Forma de pago<select id="repairPaymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Mixto</option></select></label>
+                <label>Tipo de cobro<select id="repairPaymentMode"><option value="full">Pago total</option><option value="partial">Abono / saldo pendiente</option></select></label>
+                <label>Monto recibido<input id="repairAmountPaid" type="number" min="0" step="0.01" value="0"></label>
+                <div id="repairPaymentHint" class="payment-hint">Se registrará el valor recibido en caja.</div>
+              </div>
               <button class="btn primary full-btn" id="finishRepairBtn" type="button">✓ Marcar reparado y generar factura</button>
             </div>
           </div>
@@ -321,16 +328,87 @@
               <div><span id="saleTaxLabel">IVA incluido</span><strong id="saleTax">$0.00</strong></div>
               <div class="grand"><span>Total (IVA incluido)</span><strong id="saleTotal">$0.00</strong></div>
             </div>
-            <label>Forma de pago<select id="paymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Mixto</option></select></label>
+            <div class="payment-box">
+              <label>Forma de pago<select id="paymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Mixto</option></select></label>
+              <label>Tipo de cobro<select id="salePaymentMode"><option value="full">Pago total</option><option value="partial">Abono / saldo pendiente</option></select></label>
+              <label>Monto recibido<input id="saleAmountPaid" type="number" min="0" step="0.01" value="0"></label>
+              <div id="salePaymentHint" class="payment-hint">Se registrará el valor recibido en caja.</div>
+            </div>
             <button class="btn primary full-btn" id="finishSaleBtn">Finalizar venta e imprimir</button>
           </article>
         </div>
       </section>
 
+      <section id="view-proformas" class="view">
+        <div class="grid-2 align-start sales-layout">
+          <article class="panel">
+            <div class="panel-head"><div><h3>Nueva proforma</h3><p>La proforma no descuenta stock ni registra movimientos en caja.</p></div></div>
+            <div class="form-grid">
+              <label class="full client-autocomplete-label">Cliente
+                <div class="client-autocomplete">
+                  <input id="proformaClientSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Buscar cliente por cédula o nombre…" aria-autocomplete="list" aria-controls="proformaClientSuggestions" aria-expanded="false">
+                  <input type="hidden" id="proformaClient">
+                  <div id="proformaClientSuggestions" class="client-suggestions" role="listbox"></div>
+                </div>
+              </label>
+              <label class="full product-autocomplete-label">Producto
+                <div class="product-autocomplete">
+                  <input id="proformaProductSearch" class="search-select-input" type="text" autocomplete="off" placeholder="Buscar producto por nombre, código o categoría…" aria-autocomplete="list" aria-controls="proformaProductSuggestions" aria-expanded="false">
+                  <input type="hidden" id="proformaProduct">
+                  <div id="proformaProductSuggestions" class="product-suggestions" role="listbox"></div>
+                </div>
+              </label>
+              <label>Cantidad<input id="proformaQty" type="number" min="1" value="1"></label>
+              <label>Vigencia (días)<input id="proformaValidity" type="number" min="1" step="1" value="7"></label>
+              <div class="product-preview full" id="proformaProductPreview">Busca y selecciona un producto para ver código, precio y stock disponible.</div>
+              <button class="btn secondary full" id="addProformaProductBtn" type="button">+ Agregar producto</button>
+              <label class="full">Observaciones<textarea id="proformaNotes" placeholder="Condiciones, tiempo de entrega, alcance u observaciones de la proforma."></textarea></label>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><h3>Detalle de proforma</h3></div>
+            <div id="proformaCartList" class="cart"></div>
+            <div class="totals">
+              <div><span>Subtotal sin IVA</span><strong id="proformaSubtotal">$0.00</strong></div>
+              <div><span id="proformaTaxLabel">IVA incluido</span><strong id="proformaTax">$0.00</strong></div>
+              <div class="grand"><span>Total (IVA incluido)</span><strong id="proformaTotal">$0.00</strong></div>
+            </div>
+            <div class="proforma-actions">
+              <button class="btn ghost" id="saveProformaBtn" type="button">Guardar proforma</button>
+              <button class="btn primary" id="savePrintProformaBtn" type="button">Guardar e imprimir</button>
+            </div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head inventory-head">
+            <div><h3>Proformas guardadas</h3><p>Puedes imprimirlas o convertirlas en venta cuando el cliente acepte.</p></div>
+            <input id="proformaSearch" class="search" placeholder="Buscar número, cliente o cédula">
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Número</th><th>Fecha</th><th>Cliente</th><th>Vigencia</th><th>Estado</th><th>Total</th><th>Acciones</th></tr></thead><tbody id="proformasTable"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="view-cuentas-cobrar" class="view">
+        <div class="receivable-stats">
+          <article class="stat-card"><span>Total pendiente</span><strong id="receivableTotal">$0.00</strong><small>Saldo por cobrar</small></article>
+          <article class="stat-card"><span>Facturas pendientes</span><strong id="receivableCount">0</strong><small>Con saldo</small></article>
+          <article class="stat-card"><span>Clientes con saldo</span><strong id="receivableClients">0</strong><small>Clientes distintos</small></article>
+          <article class="stat-card"><span>Abonos de hoy</span><strong id="receivableToday">$0.00</strong><small>Ingresos registrados</small></article>
+        </div>
+        <article class="panel">
+          <div class="panel-head inventory-head">
+            <div><h3>Cuentas por cobrar</h3><p>Consulta saldos pendientes y registra nuevos abonos.</p></div>
+            <input id="receivableSearch" class="search" placeholder="Buscar factura, cliente, cédula u orden">
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Factura</th><th>Tipo</th><th>Cliente</th><th>Fecha</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Acciones</th></tr></thead><tbody id="receivablesTable"></tbody></table></div>
+        </article>
+      </section>
+
       <section id="view-facturas" class="view">
         <article class="panel">
           <div class="panel-head"><div><h3>Historial de facturas</h3><p>Ventas de productos y reparaciones finalizadas.</p></div></div>
-          <div class="table-wrap"><table><thead><tr><th>Número</th><th>Tipo</th><th>Orden</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Total</th><th></th></tr></thead><tbody id="invoicesTable"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Número</th><th>Tipo</th><th>Orden</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead><tbody id="invoicesTable"></tbody></table></div>
         </article>
       </section>
 
@@ -375,6 +453,25 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="receivablePaymentModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-receivable-payment></div>
+    <div class="modal-card payment-modal-card">
+      <button class="modal-close" type="button" data-close-receivable-payment>×</button>
+      <div class="payment-modal-head">
+        <span class="history-kicker">REGISTRAR ABONO</span>
+        <h2 id="receivablePaymentTitle">Factura</h2>
+        <p id="receivablePaymentSummary"></p>
+      </div>
+      <form id="receivablePaymentForm" class="form-grid">
+        <input type="hidden" id="receivableSaleId">
+        <label>Monto del abono<input id="receivablePaymentAmount" type="number" min="0.01" step="0.01" required></label>
+        <label>Forma de pago<select id="receivablePaymentMethod"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Mixto</option></select></label>
+        <div class="full payment-balance-box"><span>Saldo actual</span><strong id="receivableCurrentBalance">$0.00</strong></div>
+        <button class="btn primary full" type="submit">Registrar abono</button>
+      </form>
+    </div>
   </div>
 
   <div id="clientHistoryModal" class="modal" aria-hidden="true">
