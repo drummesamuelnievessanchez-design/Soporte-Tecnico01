@@ -23,13 +23,12 @@
         <button class="nav-item" data-view="caja"><span class="nav-icon">💵</span><span class="nav-label">Caja</span></button>
         <button class="nav-item" data-view="clientes"><span class="nav-icon">👥</span><span class="nav-label">Clientes</span></button>
         <button class="nav-item" data-view="equipos"><span class="nav-icon">🛠️</span><span class="nav-label">Equipos</span></button>
-        <button class="nav-item owner-only" data-view="productos"><span class="nav-icon">📦</span><span class="nav-label">Productos</span></button>
-        <button class="nav-item owner-only" data-view="inventario"><span class="nav-icon">📊</span><span class="nav-label">Inventario</span></button>
-        <button class="nav-item owner-only" data-view="inventario-equipos"><span class="nav-icon">🗂️</span><span class="nav-label">Inventario equipos</span></button>
+        <button class="nav-item" data-view="productos"><span class="nav-icon">📦</span><span class="nav-label">Productos</span></button>
+        <button class="nav-item" data-view="inventario"><span class="nav-icon">📊</span><span class="nav-label">Inventario</span></button>
+        <button class="nav-item" data-view="inventario-equipos"><span class="nav-icon">🗂️</span><span class="nav-label">Inventario equipos</span></button>
         <button class="nav-item" data-view="ventas"><span class="nav-icon">🧾</span><span class="nav-label">Ventas</span></button>
-        <button class="nav-item owner-only" data-view="facturas"><span class="nav-icon">📄</span><span class="nav-label">Facturas</span></button>
-        <button class="nav-item owner-only" data-view="trabajadores"><span class="nav-icon">👷</span><span class="nav-label">Trabajadores</span></button>
-        <button class="nav-item owner-only" data-view="configuracion"><span class="nav-icon">⚙️</span><span class="nav-label">Configuración</span></button>
+        <button class="nav-item" data-view="facturas"><span class="nav-icon">📄</span><span class="nav-label">Facturas</span></button>
+        <button class="nav-item" data-view="configuracion"><span class="nav-icon">⚙️</span><span class="nav-label">Configuración</span></button>
       </nav>
 
       <div class="sidebar-footer">
@@ -45,7 +44,6 @@
         </div>
         <div class="top-actions">
           <span id="cloudStatus" class="cloud-status offline">☁ Sin conexión</span>
-          <span id="roleBadge" class="role-badge">Propietario</span>
           <span id="todayLabel"></span>
           <button class="btn ghost" id="quickOpenCash">Abrir caja</button>
           <button class="btn ghost" id="logoutBtn" type="button" style="display:none">Cerrar sesión</button>
@@ -300,31 +298,6 @@
         </article>
       </section>
 
-      <section id="view-trabajadores" class="view owner-section">
-        <div class="grid-2 align-start">
-          <article class="panel">
-            <div class="panel-head"><div><h3>Registrar trabajador</h3><p>El trabajador tendrá acceso operativo, pero no a configuración ni funciones administrativas.</p></div></div>
-            <form id="workerInviteForm" class="form-grid">
-              <label>Nombre completo<input id="workerName" required placeholder="Nombre del trabajador"></label>
-              <label>Correo electrónico<input id="workerEmail" type="email" required placeholder="trabajador@correo.com"></label>
-              <button class="btn primary full" type="submit">Crear acceso de trabajador</button>
-            </form>
-            <div class="info-note"><strong>Permisos del trabajador:</strong> Inicio, Caja, Clientes, Equipos y Ventas. No podrá abrir Productos, Inventarios, Facturas, Trabajadores ni Configuración, ni eliminar equipos o facturas.</div>
-          </article>
-          <article class="panel">
-            <div class="panel-head"><h3>Cómo entra un trabajador</h3></div>
-            <div class="worker-help">
-              <p>1. Registra aquí su nombre y correo.</p><p>2. El sistema genera un código de invitación.</p><p>3. El trabajador crea su cuenta con ese mismo correo.</p><p>4. En el inicio de sesión escribe el código una sola vez.</p>
-            </div>
-          </article>
-        </div>
-        <article class="panel">
-          <div class="panel-head"><h3>Invitaciones y trabajadores</h3><button id="refreshWorkersBtn" class="btn ghost" type="button">Actualizar</button></div>
-          <div id="teamSetupWarning" class="cloud-warning" style="display:none"><strong>Falta actualizar Supabase</strong><p>Ejecuta el archivo <code>ACTUALIZAR_SUPABASE_TRABAJADORES.sql</code> en SQL Editor para activar usuarios trabajadores.</p></div>
-          <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Código / Estado</th><th>Acciones</th></tr></thead><tbody id="workersTable"></tbody></table></div>
-        </article>
-      </section>
-
       <section id="view-configuracion" class="view">
         <div class="grid-2 align-start">
           <article class="panel">
@@ -438,12 +411,11 @@
       <form id="authForm" class="auth-form">
         <label>Correo electrónico<input id="authEmail" type="email" autocomplete="email" required placeholder="correo@ejemplo.com"></label>
         <label>Contraseña<input id="authPassword" type="password" autocomplete="current-password" required minlength="6" placeholder="Mínimo 6 caracteres"></label>
-        <label>Código de trabajador <span class="optional-text">(solo si te invitaron)</span><input id="authInviteCode" autocomplete="one-time-code" placeholder="Ej. TRAB-A1B2C3"></label>
         <button id="loginBtn" class="btn primary" type="submit">Iniciar sesión</button>
         <button id="signupBtn" class="btn secondary" type="button">Crear cuenta</button>
       </form>
       <div id="authMessage" class="auth-message"></div>
-      <p class="auth-note">Los datos se sincronizan con la nube. Si eres trabajador, usa el mismo correo de la invitación y escribe el código la primera vez que inicies sesión.</p>
+      <p class="auth-note">Los datos se sincronizan con la nube para que puedas acceder a tu negocio desde tus dispositivos autorizados.</p>
     </div>
   </div>
 

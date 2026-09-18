@@ -50,12 +50,7 @@ let cloudSyncChain = Promise.resolve();
 let cloudReady = false;
 let workspaceOwnerId = null;
 let cloudRole = 'owner';
-let cloudDisplayName = '';
-let currentMembership = null;
-let teamReady = false;
-let pendingInviteCode = '';
-
-const isOwner = () => cloudRole === 'owner';
+const isOwner = () => true;
 
 function cloudConfigIsValid() {
   const cfg = window.SUPABASE_CONFIG || {};
@@ -110,59 +105,13 @@ function hideAuthOverlay() {
 }
 
 
-async function resolveMembership(user, inviteCode = '') {
+async function resolveMembership(user) {
   workspaceOwnerId = user.id;
   cloudRole = 'owner';
-  cloudDisplayName = user.email || '';
-  currentMembership = null;
-  teamReady = false;
-
-  // Si todavía no se ejecutó la actualización SQL de trabajadores,
-  // la aplicación sigue funcionando en modo propietario como antes.
-  let memberResult = await cloudClient.from('app_members').select('user_id,owner_id,role,display_name,active').eq('user_id', user.id).maybeSingle();
-  if (memberResult.error) {
-    console.warn('Módulo de trabajadores no disponible todavía:', memberResult.error.message);
-    return;
-  }
-  teamReady = true;
-  let member = memberResult.data;
-
-  if (inviteCode) {
-    const { data, error } = await cloudClient.rpc('claim_worker_invite', { p_code: inviteCode.trim() });
-    if (error) throw new Error(error.message || 'No se pudo validar el código de trabajador.');
-    if (Array.isArray(data) && data.length) member = data[0];
-    else if (data && typeof data === 'object') member = data;
-    else {
-      const again = await cloudClient.from('app_members').select('user_id,owner_id,role,display_name,active').eq('user_id', user.id).maybeSingle();
-      if (again.error) throw again.error;
-      member = again.data;
-    }
-  }
-
-  if (!member) {
-    const payload = { user_id: user.id, owner_id: user.id, role: 'owner', display_name: user.email || 'Propietario', active: true };
-    const created = await cloudClient.from('app_members').insert(payload).select('user_id,owner_id,role,display_name,active').single();
-    if (created.error) throw created.error;
-    member = created.data;
-  }
-
-  if (member.active === false) throw new Error('Este acceso de trabajador está desactivado por el propietario.');
-  currentMembership = member;
-  workspaceOwnerId = member.owner_id || user.id;
-  cloudRole = member.role || 'owner';
-  cloudDisplayName = member.display_name || user.email || '';
 }
 
 function applyRoleAccess() {
-  const owner = isOwner();
-  document.querySelectorAll('.owner-only').forEach(el => el.style.display = owner ? '' : 'none');
-  const badge = document.getElementById('roleBadge');
-  if (badge) {
-    badge.textContent = owner ? '👑 Propietario' : `👷 Trabajador${cloudDisplayName ? ' · ' + cloudDisplayName : ''}`;
-    badge.className = 'role-badge ' + (owner ? 'owner' : 'worker');
-  }
-  const activeOwnerView = document.querySelector('.nav-item.active.owner-only');
-  if (!owner && activeOwnerView) showView('dashboard');
+  // Versión sin módulo de trabajadores: el usuario autenticado administra su propio negocio.
 }
 
 async function pushCloudSnapshot(snapshot, userId) {
@@ -211,15 +160,14 @@ async function loadCloudState(user) {
   setCloudStatus('online', '☁ Guardado');
 }
 
-async function activateCloudUser(user, inviteCode = '') {
+async function activateCloudUser(user) {
   if (!user) return;
-  if (cloudUser?.id === user.id && cloudReady && !inviteCode) return;
+  if (cloudUser?.id === user.id && cloudReady) return;
   cloudUser = user;
   cloudReady = false;
   hideAuthOverlay();
   try {
-    await resolveMembership(user, inviteCode || pendingInviteCode || '');
-    pendingInviteCode = '';
+    await resolveMembership(user);
     await loadCloudState(user);
     applyRoleAccess();
     setAuthMessage('');
@@ -252,7 +200,7 @@ async function initCloud() {
     const { data, error } = await cloudClient.auth.getSession();
     if (error) throw error;
     if (data.session?.user) {
-      await activateCloudUser(data.session.user, pendingInviteCode);
+      await activateCloudUser(data.session.user);
     } else {
       setCloudStatus('offline', '☁ Inicia sesión');
     }
@@ -265,7 +213,7 @@ async function initCloud() {
   cloudClient.auth.onAuthStateChange((event, session) => {
     setTimeout(async () => {
       if (session?.user) {
-        await activateCloudUser(session.user, pendingInviteCode);
+        await activateCloudUser(session.user);
       } else {
         cloudUser = null;
         cloudReady = false;
@@ -300,16 +248,10 @@ const viewMeta = {
   'inventario-equipos': ['Inventario de equipos', 'Historial y estado de máquinas ingresadas'],
   ventas: ['Ventas', 'Venta directa de productos'],
   facturas: ['Facturas', 'Historial de ventas y reparaciones'],
-  trabajadores: ['Trabajadores', 'Usuarios operativos y permisos'],
   configuracion: ['Configuración', 'Empresa, logo y colores']
 };
 
 function showView(v) {
-  const ownerOnlyViews = new Set(['productos','inventario','inventario-equipos','facturas','trabajadores','configuracion']);
-  if (!isOwner() && ownerOnlyViews.has(v)) {
-    toast('Este apartado es exclusivo del propietario');
-    v = 'dashboard';
-  }
   document.querySelectorAll('.nav-item').forEach(x => x.classList.toggle('active', x.dataset.view === v));
   document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
   const target = document.getElementById('view-' + v);
@@ -317,7 +259,6 @@ function showView(v) {
   target.classList.add('active');
   document.getElementById('pageTitle').textContent = viewMeta[v][0];
   document.getElementById('pageSubtitle').textContent = viewMeta[v][1];
-  if (v === 'trabajadores') renderWorkers();
   if (v === 'inventario-equipos') renderMachineInventory();
 }
 
@@ -1455,85 +1396,6 @@ function renderMachineInventory() {
 document.getElementById('machineInventorySearch').oninput = renderMachineInventory;
 document.getElementById('machineInventoryFilter').onchange = renderMachineInventory;
 
-function generateWorkerCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let out = 'TRAB-';
-  for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
-
-async function renderWorkers() {
-  const tbody = document.getElementById('workersTable');
-  const warning = document.getElementById('teamSetupWarning');
-  if (!tbody || !isOwner()) return;
-  if (!cloudClient || !cloudUser || !teamReady) {
-    warning.style.display = 'block';
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Ejecuta la actualización SQL para habilitar trabajadores.</td></tr>';
-    return;
-  }
-  warning.style.display = 'none';
-  tbody.innerHTML = '<tr><td colspan="5" class="empty">Cargando trabajadores…</td></tr>';
-  try {
-    const [membersRes, invitesRes] = await Promise.all([
-      cloudClient.from('app_members').select('user_id,owner_id,role,display_name,active,created_at').eq('owner_id', workspaceOwnerId).order('created_at', { ascending: false }),
-      cloudClient.from('worker_invites').select('id,owner_id,name,email,invite_code,active,claimed_by,created_at').eq('owner_id', workspaceOwnerId).order('created_at', { ascending: false })
-    ]);
-    if (membersRes.error) throw membersRes.error;
-    if (invitesRes.error) throw invitesRes.error;
-    const workers = (membersRes.data || []).filter(m => m.role === 'worker');
-    const pending = (invitesRes.data || []).filter(i => i.active && !i.claimed_by);
-    const rows = [];
-    workers.forEach(m => rows.push(`<tr><td><strong>${esc(m.display_name || 'Trabajador')}</strong></td><td class="muted">Cuenta vinculada</td><td><span class="status">Trabajador</span></td><td><span class="status ${m.active ? 'good' : 'bad'}">${m.active ? 'Activo' : 'Desactivado'}</span></td><td><button class="mini ${m.active ? 'danger' : 'good-mini'}" onclick="toggleWorkerAccess('${m.user_id}',${m.active ? 'false' : 'true'})">${m.active ? 'Desactivar' : 'Reactivar'}</button></td></tr>`));
-    pending.forEach(i => rows.push(`<tr><td><strong>${esc(i.name)}</strong></td><td>${esc(i.email)}</td><td><span class="status warn">Invitación</span></td><td><span class="worker-code">${esc(i.invite_code)}</span></td><td><div class="action-row"><button class="mini" onclick="copyWorkerCode('${esc(i.invite_code)}')">Copiar código</button><button class="mini danger" onclick="deleteWorkerInvite('${i.id}')">Eliminar</button></div></td></tr>`));
-    tbody.innerHTML = rows.join('') || '<tr><td colspan="5" class="empty">No hay trabajadores ni invitaciones.</td></tr>';
-  } catch (err) {
-    console.error(err);
-    warning.style.display = 'block';
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">No se pudo cargar el módulo de trabajadores.</td></tr>';
-  }
-}
-
-document.getElementById('workerInviteForm').onsubmit = async e => {
-  e.preventDefault();
-  if (!isOwner()) return toast('Solo el propietario puede registrar trabajadores');
-  if (!teamReady) return toast('Primero ejecuta la actualización SQL de trabajadores');
-  const name = document.getElementById('workerName').value.trim();
-  const email = document.getElementById('workerEmail').value.trim().toLowerCase();
-  if (!name || !email) return toast('Completa nombre y correo');
-  const code = generateWorkerCode();
-  const { error } = await cloudClient.from('worker_invites').insert({ owner_id: workspaceOwnerId, name, email, invite_code: code, active: true });
-  if (error) {
-    console.error(error);
-    return toast(error.message?.includes('duplicate') ? 'Ya existe una invitación para ese correo o código' : 'No se pudo crear la invitación');
-  }
-  e.target.reset();
-  await renderWorkers();
-  toast('Trabajador registrado. Código: ' + code);
-};
-
-document.getElementById('refreshWorkersBtn').onclick = renderWorkers;
-
-window.copyWorkerCode = async code => {
-  try { await navigator.clipboard.writeText(code); toast('Código copiado'); }
-  catch { prompt('Copia este código:', code); }
-};
-
-window.deleteWorkerInvite = async id => {
-  if (!isOwner()) return;
-  if (!confirm('¿Eliminar esta invitación?')) return;
-  const { error } = await cloudClient.from('worker_invites').delete().eq('id', id).eq('owner_id', workspaceOwnerId);
-  if (error) return toast('No se pudo eliminar la invitación');
-  await renderWorkers();
-  toast('Invitación eliminada');
-};
-
-window.toggleWorkerAccess = async (userId, active) => {
-  if (!isOwner()) return;
-  const { error } = await cloudClient.from('app_members').update({ active: Boolean(active) }).eq('user_id', userId).eq('owner_id', workspaceOwnerId);
-  if (error) return toast('No se pudo cambiar el acceso');
-  await renderWorkers();
-  toast(active ? 'Trabajador reactivado' : 'Trabajador desactivado');
-};
 
 function renderAll() {
   applyTheme();
@@ -1559,13 +1421,12 @@ document.getElementById('authForm').onsubmit = async e => {
   if (!cloudClient) return;
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
-  pendingInviteCode = document.getElementById('authInviteCode').value.trim();
   setAuthMessage('Iniciando sesión…');
   const { data, error } = await cloudClient.auth.signInWithPassword({ email, password });
   if (error) return setAuthMessage(error.message || 'No se pudo iniciar sesión.', 'error');
   if (data.user) {
     setAuthMessage('Sesión iniciada.', 'success');
-    await activateCloudUser(data.user, pendingInviteCode);
+    await activateCloudUser(data.user);
   }
 };
 
@@ -1573,14 +1434,13 @@ document.getElementById('signupBtn').onclick = async () => {
   if (!cloudClient) return;
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
-  pendingInviteCode = document.getElementById('authInviteCode').value.trim();
   if (!email || password.length < 6) return setAuthMessage('Escribe un correo válido y una contraseña de al menos 6 caracteres.', 'error');
   setAuthMessage('Creando cuenta…');
   const { data, error } = await cloudClient.auth.signUp({ email, password });
   if (error) return setAuthMessage(error.message || 'No se pudo crear la cuenta.', 'error');
   if (data.session?.user) {
     setAuthMessage('Cuenta creada correctamente.', 'success');
-    await activateCloudUser(data.session.user, pendingInviteCode);
+    await activateCloudUser(data.session.user);
   } else {
     setAuthMessage('Cuenta creada. Revisa tu correo para confirmar la cuenta y después inicia sesión.', 'success');
   }
@@ -1593,7 +1453,7 @@ document.getElementById('logoutBtn').onclick = async () => {
   if (error) return toast('No se pudo cerrar sesión');
   cloudUser = null;
   cloudReady = false;
-  workspaceOwnerId = null; cloudRole = 'owner'; cloudDisplayName = ''; currentMembership = null;
+  workspaceOwnerId = null; cloudRole = 'owner';
   showAuthOverlay();
   setCloudStatus('offline', '☁ Inicia sesión');
 };
@@ -1663,12 +1523,6 @@ const guideSteps = {
     { selector: '#invoicesTable', icon: '📄', title: 'Historial de facturas', text: 'Aquí encontrarás las facturas de ventas y reparaciones. Desde las acciones puedes imprimir en A4 o ticket, preparar el correo y, como propietario, eliminar una factura incorrecta.' },
     { selector: '#view-facturas .panel-head', icon: '⚠️', title: 'Eliminar con cuidado', text: 'La eliminación de una factura es administrativa. Si borras una factura incorrecta, el sistema intenta revertir los movimientos relacionados, por lo que debes usar esta opción únicamente cuando sea necesario.' }
   ],
-  trabajadores: [
-    { selector: '#workerInviteForm', icon: '👷', title: 'Registrar trabajador', text: 'Ingresa nombre y correo del trabajador. El sistema generará una invitación para que acceda con permisos operativos limitados.' },
-    { selector: '#view-trabajadores .info-note', icon: '🔐', title: 'Permisos limitados', text: 'El trabajador puede usar Inicio, Caja, Clientes, Equipos y Ventas. No puede acceder a productos, inventarios, facturas, trabajadores ni configuración.' },
-    { selector: '#view-trabajadores .worker-help', icon: '🔑', title: 'Activar su acceso', text: 'El trabajador crea su cuenta con el mismo correo registrado y utiliza el código de invitación una sola vez al iniciar sesión.' },
-    { selector: '#workersTable', icon: '👥', title: 'Administrar trabajadores', text: 'Aquí el propietario puede revisar las invitaciones y trabajadores registrados, su estado y las acciones disponibles.' }
-  ],
   configuracion: [
     { selector: '#companyForm', icon: '🏢', title: 'Datos de la empresa', text: 'Configura RUC, nombre del local, razón social, teléfono, dirección, correo y logo. Estos datos se utilizan en los comprobantes.' },
     { selector: '#companyTaxRate', icon: '％', title: 'IVA incluido', text: 'Define aquí el porcentaje de IVA. Los precios registrados ya incluyen ese IVA: un producto guardado a 60 dólares seguirá costando 60 dólares al cliente.' },
@@ -1684,8 +1538,7 @@ function getCurrentGuideView() {
 }
 
 function guideAvailableViews() {
-  const ownerOnly = new Set(['productos','inventario','inventario-equipos','facturas','trabajadores','configuracion']);
-  return Object.keys(guideSteps).filter(v => isOwner() || !ownerOnly.has(v));
+  return Object.keys(guideSteps);
 }
 
 function populateGuideModules(selected) {
